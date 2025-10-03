@@ -1,0 +1,87 @@
+[project]
+name = "pyhexopt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "meshio>=5.3.5",
+    "pathlib>=1.0.1",
+    "pyaml>=25.7.0",
+]
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py312"
+select = [
+    "ALL", # include all the rules, including new ones
+]
+fixable = ["A", "B", "C", "D", "E", "F"]
+ignore = [
+    #### modules
+    "ANN", # flake8-annotations
+    "COM", # flake8-commas
+    "C90", # mccabe complexity
+    "DJ",  # django
+    "EXE", # flake8-executable
+    "T10", # debugger
+    "TID", # flake8-tidy-imports
+
+    #### specific rules
+    "D1",   # ignore missing docs
+    "D205",
+    "D212",
+    "D400",
+    "D401",
+    "D415",
+    "E501",   # line too long
+    "TRY003", # external messages in exceptions are too verbose
+    "TD002",
+    "TD003",
+    "FIX002", # too verbose descriptions of todos
+    "G004", #ignore logging fstrings
+    "N815", #mixed type names
+    "RUF003", #unicode chars
+    "N817", # camelcase-imported-as-acronym
+    "FBT",
+    "N806", #non-lowercase-variable-in-function ()
+    "SIM108", #if-else-block-instead-of-if-exp ()
+    "SIM109", # if-elif-else-block-instead-of-if-exp ()
+    "EM102", #f-string-in-exception ()
+    "RET504",
+]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "__init__.py",
+]
+[tool.ruff.lint]
+fixable = ["ALL"]
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # Allow unused imports in __init__.py files.
+"test*" = ["PLR2004","S101","SLF001"]
+"*ipynb" = ["ALL"]
