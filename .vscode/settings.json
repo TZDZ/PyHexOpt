@@ -1,0 +1,22 @@
+{
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "plantuml.diagramsRoot": "/docs/diagrams/src",
+    "plantuml.exportOutDir": "/docs/diagrams/out",
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+      },
+      "isort.args":["--profile", "ruff"],
+      "files.exclude": {
+        "**/*_cache": true,
+        "**/*.egg-info": true,
+        "**/*__pycache__": true,
+    }
+}

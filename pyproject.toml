@@ -8,7 +8,12 @@ dependencies = [
     "meshio>=5.3.5",
     "pathlib>=1.0.1",
     "pyaml>=25.7.0",
+    "pytest>=8.4.2",
 ]
+[tool.uv]
+package = true
+[tool.setuptools]
+packages = ["pyhexopt"]
 [tool.ruff]
 line-length = 120
 indent-width = 4
