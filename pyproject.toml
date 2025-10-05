@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "ipykernel>=6.30.1",
     "meshio>=5.3.5",
     "pathlib>=1.0.1",
     "pyaml>=25.7.0",

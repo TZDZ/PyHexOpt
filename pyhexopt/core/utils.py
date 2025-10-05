@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import meshio
 import numpy as np
 
@@ -8,18 +10,16 @@ def _hex_face_keys_from_cell(cell: np.ndarray) -> list[tuple[int, ...]]:
     as canonical (sorted tuple) keys of Python ints.
     Assumes the cell array lists the first 4 nodes as bottom and next 4 as top.
     """
-    # convert to plain Python ints once
     n = [int(x) for x in cell]
     faces = [
-        (n[0], n[1], n[2], n[3]),  # bottom
-        (n[4], n[5], n[6], n[7]),  # top
-        (n[0], n[1], n[5], n[4]),
-        (n[1], n[2], n[6], n[5]),
-        (n[2], n[3], n[7], n[6]),
-        (n[3], n[0], n[4], n[7]),
+        frozenset(n[0], n[1], n[2], n[3]),  # bottom
+        frozenset(n[4], n[5], n[6], n[7]),  # top
+        frozenset(n[0], n[1], n[5], n[4]),
+        frozenset(n[1], n[2], n[6], n[5]),
+        frozenset(n[2], n[3], n[7], n[6]),
+        frozenset(n[3], n[0], n[4], n[7]),
     ]
-    # canonicalize each face to a sorted tuple so orientation doesn't matter
-    return [tuple(sorted(face)) for face in faces]
+    return faces
 
 
 def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
@@ -31,11 +31,11 @@ def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
     if "hexahedron" not in mesh.cells_dict:
         raise ValueError("Mesh does not contain hexahedra.")
 
-    face_count = {}
+    face_count = defaultdict(lambda: 0)
 
     for cell in mesh.cells_dict["hexahedron"]:
         for face_key in _hex_face_keys_from_cell(cell):
-            face_count[face_key] = face_count.get(face_key, 0) + 1
+            face_count[face_key] += 1
 
     # faces that appear only once are boundary faces
     boundary_nodes = set()
