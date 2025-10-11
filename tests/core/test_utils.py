@@ -34,7 +34,6 @@ def test_single_hex_boundary_nodes():
 
 
 def test_two_adjacent_hexes_shared_face():
-    # Two cubes sharing a face along x=1
     points = np.array(
         [
             [0, 0, 0],  # 0
@@ -65,13 +64,18 @@ def test_two_adjacent_hexes_shared_face():
     ]
 
     mesh = meshio.Mesh(points=points, cells=cells)
-
     boundary_nodes = get_boundary_nodes(mesh)
-
-    # Shared face (nodes 1,2,5,6) should not be considered boundary
-    expected = np.array([0, 3, 4, 7, 8, 9, 10, 11])
+    expected = np.arange(12)
 
     assert set(boundary_nodes) == set(expected)
+
+
+def test_3x3():
+    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    bnd_nodes = get_boundary_nodes(msh)
+    assert len(bnd_nodes) == 56
+    for n in (59, 60, 63, 64, 61, 62, 57, 58):
+        assert n not in bnd_nodes
 
 
 if __name__ == "__main__":

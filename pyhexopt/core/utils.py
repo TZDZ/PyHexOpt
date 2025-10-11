@@ -12,12 +12,12 @@ def _hex_face_keys_from_cell(cell: np.ndarray) -> list[tuple[int, ...]]:
     """
     n = [int(x) for x in cell]
     faces = [
-        frozenset(n[0], n[1], n[2], n[3]),  # bottom
-        frozenset(n[4], n[5], n[6], n[7]),  # top
-        frozenset(n[0], n[1], n[5], n[4]),
-        frozenset(n[1], n[2], n[6], n[5]),
-        frozenset(n[2], n[3], n[7], n[6]),
-        frozenset(n[3], n[0], n[4], n[7]),
+        frozenset((n[0], n[1], n[2], n[3])),  # bottom
+        frozenset((n[4], n[5], n[6], n[7])),  # top
+        frozenset((n[0], n[1], n[5], n[4])),
+        frozenset((n[1], n[2], n[6], n[5])),
+        frozenset((n[2], n[3], n[7], n[6])),
+        frozenset((n[3], n[0], n[4], n[7])),
     ]
     return faces
 
@@ -29,7 +29,8 @@ def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
     """
     # handle case where mesh may have multiple cell blocks
     if "hexahedron" not in mesh.cells_dict:
-        raise ValueError("Mesh does not contain hexahedra.")
+        msg = "Mesh does not contain hexahedra."
+        raise ValueError(msg)
 
     face_count = defaultdict(lambda: 0)
 
@@ -41,7 +42,6 @@ def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
     boundary_nodes = set()
     for face_key, count in face_count.items():
         if count == 1:
-            # face_key is a tuple of ints
             boundary_nodes.update(face_key)
 
     return np.array(sorted(boundary_nodes), dtype=int)
