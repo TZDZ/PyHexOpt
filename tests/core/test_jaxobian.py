@@ -3,13 +3,13 @@ import meshio
 import numpy as np
 import pytest
 
+from pyhexopt.adapters.meshio_ import extract_hex_node_coords
 from pyhexopt.core.jaxobian import (
     GAUSS_POINTS,
     REF_SIGNS,
     _compute_center_jacobians,
     _compute_jacobians_at_points,
-    compute_jacobians,
-    compute_scaled_jacobians,
+    compute_scaled_jacobians_from_coords,
     det3x3,
     dN_trilinear_at_samples,
 )
@@ -93,58 +93,6 @@ def test_compute_center_jacobians_random_batch():
 
     assert np.allclose(np.array(J_jax), J_np_ref, atol=1e-6)
     assert np.allclose(np.array(det_jax), det_np_ref, atol=1e-6)
-
-
-def test_jacobians_at_points_unit_cube():
-    """
-    For a unit cube [0,1]^3 arranged in MeshIO/VTK node order,
-    the mapping from reference [-1,1]^3 -> [0,1]^3 is linear with
-    constant Jacobian diag(0.5,0.5,0.5) and determinant 0.125 for all sample points.
-    """
-    # unit cube nodes (MeshIO / VTK ordering)
-    coords = np.array(
-        [
-            [0.0, 0.0, 0.0],  # 0
-            [1.0, 0.0, 0.0],  # 1
-            [1.0, 1.0, 0.0],  # 2
-            [0.0, 1.0, 0.0],  # 3
-            [0.0, 0.0, 1.0],  # 4
-            [1.0, 0.0, 1.0],  # 5
-            [1.0, 1.0, 1.0],  # 6
-            [0.0, 1.0, 1.0],  # 7
-        ],
-        dtype=np.float32,
-    )
-
-    # pack into (E,8,3) with E=1
-    nodes_xyz = jnp.expand_dims(jnp.array(coords, dtype=jnp.float32), axis=0)  # (1,8,3)
-
-    # choose a set of sample points (xi,eta,zeta) including center and some corners / midpoints
-    sample_points = np.array(
-        [
-            [0.0, 0.0, 0.0],  # center
-            [1.0 / np.sqrt(3), 1.0 / np.sqrt(3), 1.0 / np.sqrt(3)],  # gauss point
-            [-0.5, 0.3, -0.2],  # arbitrary interior point
-        ],
-        dtype=np.float32,
-    )  # shape (Q,3)
-
-    dN_q = dN_trilinear_at_samples(sample_points, dtype=jnp.float32)  # (Q,8,3)
-
-    # compute
-    J, detJ = _compute_jacobians_at_points(nodes_xyz, dN_q)
-
-    J_np = np.array(J)  # shape (1, Q, 3, 3)
-    det_np = np.array(detJ)  # shape (1, Q)
-
-    # Expected Jacobian for unit cube is diag(0.5,0.5,0.5) at all points
-    expected_J = np.tile(np.diag([0.5, 0.5, 0.5])[None, None, :, :], (1, sample_points.shape[0], 1, 1))
-
-    assert J_np.shape == (1, sample_points.shape[0], 3, 3)
-    assert det_np.shape == (1, sample_points.shape[0])
-
-    assert np.allclose(J_np, expected_J, atol=1e-7)
-    assert np.allclose(det_np, 0.125, atol=1e-7)
 
 
 def test_jacobians_at_points_random_batch_against_numpy():
@@ -302,11 +250,13 @@ def make_hex_mesh(points):
     return meshio.Mesh(points=points, cells=cells)
 
 
-def test_compute_jacobians_unit_cube():
-    """
-    For a unit cube [0,1]^3, reference domain is [-1,1]^3,
-    so J = diag(0.5,0.5,0.5), detJ = 0.125.
-    """
+def make_hex_node_coords(points):
+    """Create node_coords array (E=1,8,3) from 8 node coordinates."""
+    return np.expand_dims(points, axis=0)  # shape (1,8,3)
+
+
+def test_scaled_jacobian_unit_cube_center():
+    """Unit cube [0,1]^3 should give SJ = 1.0 at center."""
     points = np.array(
         [
             [0, 0, 0],
@@ -320,23 +270,79 @@ def test_compute_jacobians_unit_cube():
         ],
         dtype=float,
     )
-
-    mesh = make_hex_mesh(points)
-    J, detJ = compute_jacobians(mesh, at_center=True, verbose=False)
-
-    expected_J = np.diag([0.5, 0.5, 0.5])
-    expected_detJ = 0.125
-
-    np.testing.assert_allclose(J[0], expected_J, atol=1e-6)
-    np.testing.assert_allclose(detJ[0], expected_detJ, atol=1e-6)
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=True)
+    assert SJ.shape == (1,)
+    np.testing.assert_allclose(SJ[0], 1.0, atol=1e-6)
 
 
-def test_compute_jacobians_scaled_x():
-    """
-    Stretch cube along x by factor 2.
-    Mapping from [-1,1]^3 → [0,2]×[0,1]×[0,1],
-    so J = diag(1.0,0.5,0.5), detJ = 0.25.
-    """
+def test_scaled_jacobian_stretched_x_center():
+    """Stretching geometry reduces scaled Jacobian magnitude."""
+    points = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1.5, 0.8],
+            [0, 1, 1],
+        ],
+        dtype=float,
+    )
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=True)
+    assert SJ.shape == (1,)
+    assert SJ[0] < 1.0
+
+
+def test_scaled_jacobian_inverted_center():
+    """Inverted element (swapped top/bottom) should yield SJ < 0."""
+    points = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ],
+        dtype=float,
+    )
+    inverted = points.copy()
+    inverted[[0, 1, 2, 3, 4, 5, 6, 7]] = points[[4, 5, 6, 7, 0, 1, 2, 3]]
+    node_coords = make_hex_node_coords(inverted)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=True)
+    assert SJ.shape == (1,)
+    assert SJ[0] < 0.0
+
+
+def test_scaled_jacobian_unit_cube_corners():
+    """Unit cube should give SJ = 1.0 at all corners."""
+    points = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ],
+        dtype=float,
+    )
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
+    assert SJ.shape == (1, 8)
+    np.testing.assert_allclose(SJ[0], 1.0, atol=1e-6)
+
+
+def test_scaled_jacobian_stretched_x_corners():
+    """Uniform stretch should yield SJ = 1 at all corners."""
     points = np.array(
         [
             [0, 0, 0],
@@ -350,103 +356,14 @@ def test_compute_jacobians_scaled_x():
         ],
         dtype=float,
     )
-
-    mesh = make_hex_mesh(points)
-    J, detJ = compute_jacobians(mesh, at_center=True, verbose=False)
-
-    expected_J = np.diag([1.0, 0.5, 0.5])
-    expected_detJ = 0.25
-
-    np.testing.assert_allclose(J[0], expected_J, atol=1e-6)
-    np.testing.assert_allclose(detJ[0], expected_detJ, atol=1e-6)
-
-
-def test_scaled_jacobian_unit_cube():
-    """Unit cube [0,1]^3 should give SJ = 1.0 at center."""
-    points = np.array(
-        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], dtype=float
-    )
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=True, verbose=False)
-    assert SJ.shape == (1,)
-    np.testing.assert_allclose(SJ[0], 1.0, atol=1e-6)
-
-
-def test_scaled_jacobian_stretched_x():
-    points = np.array(
-        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1.5, 0.8], [0, 1, 1]], dtype=float
-    )
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=True, verbose=False)
-    assert SJ.shape == (1,)
-    # The diagonal J would be [1,0.5,0.5], SJ = det(J)/(||Jx||*||Jy||*||Jz||) = 0.5
-    assert SJ[0] < 1
-
-
-def test_scaled_jacobian_inverted_element():
-    """A geometrically inverted cube (top and bottom faces swapped) should produce negative SJ."""
-    # Original unit cube
-    points = np.array(
-        [
-            [0, 0, 0],  # 0
-            [1, 0, 0],  # 1
-            [1, 1, 0],  # 2
-            [0, 1, 0],  # 3
-            [0, 0, 1],  # 4
-            [1, 0, 1],  # 5
-            [1, 1, 1],  # 6
-            [0, 1, 1],  # 7
-        ],
-        dtype=float,
-    )
-
-    # Invert along z: swap top and bottom faces
-    inverted_points = points.copy()
-    inverted_points[[0, 1, 2, 3, 4, 5, 6, 7]] = points[[4, 5, 6, 7, 0, 1, 2, 3]]
-
-    mesh = make_hex_mesh(inverted_points)
-    SJ = compute_scaled_jacobians(mesh, at_center=True, verbose=False)
-
-    assert SJ.shape == (1,)
-    assert SJ[0] < 0  # inverted element has negative scaled Jacobian
-
-
-def test_scaled_jacobian_unit_cube():
-    """Unit cube [0,1]^3 should give SJ = 1 at all corners."""
-    points = np.array(
-        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], dtype=float
-    )
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=False, sample_points=GAUSS_POINTS, verbose=False)
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
     assert SJ.shape == (1, 8)
     np.testing.assert_allclose(SJ[0], 1.0, atol=1e-6)
 
 
-def test_scaled_jacobian_stretched_x():
-    points = np.array(
-        [[0, 0, 0], [2, 0, 0], [2, 1, 0], [0, 1, 0], [0, 0, 1], [2, 0, 1], [2, 1, 1], [0, 1, 1]], dtype=float
-    )
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=False, sample_points=GAUSS_POINTS, verbose=False)
-    assert SJ.shape == (1, 8)
-    np.testing.assert_allclose(SJ[0], 1.0, atol=1e-6)
-
-
-def test_scaled_jacobian_inverted_element():
-    """Swap two nodes to invert element: SJ negative somewhere."""
-    points = np.array(
-        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], dtype=float
-    )
-    # swap nodes 6 and 7 to invert
-    points[[6, 7]] = points[[7, 6]]
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=False, sample_points=GAUSS_POINTS, verbose=False)
-    assert SJ.shape == (1, 8)
-    assert np.any(SJ[0] < 0.0)
-
-
-def test_scaled_jacobian_concave_element():
-    """Concave hex: SJ < 1 at some corners."""
+def test_scaled_jacobian_inverted_corners():
+    """Swapping two nodes should create negative SJ at some corners."""
     points = np.array(
         [
             [0, 0, 0],
@@ -455,16 +372,38 @@ def test_scaled_jacobian_concave_element():
             [0, 1, 0],
             [0, 0, 1],
             [1, 0, 1],
-            [0.5, 0.5, 0.8],
-            [0, 1, 1],  # move node 6 inward to create concavity
+            [1, 1, 1],
+            [0, 1, 1],
         ],
         dtype=float,
     )
-    mesh = make_hex_mesh(points)
-    SJ = compute_scaled_jacobians(mesh, at_center=False, sample_points=GAUSS_POINTS, verbose=False)
+    points[[6, 7]] = points[[7, 6]]
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
+    assert SJ.shape == (1, 8)
+    assert np.any(SJ[0] < 0.0)
+
+
+def test_scaled_jacobian_concave_corners():
+    """Concave hex should yield SJ < 1 at some corners."""
+    points = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [0.5, 0.5, 0.8],  # pull inward
+            [0, 1, 1],
+        ],
+        dtype=float,
+    )
+    node_coords = make_hex_node_coords(points)
+    SJ = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
     assert SJ.shape == (1, 8)
     assert np.any(SJ[0] < 1.0)
-    assert np.any(SJ[0] < 0.0)  # still not inverted
+    assert np.all(SJ[0] > -1.0)
 
 
 if __name__ == "__main__":

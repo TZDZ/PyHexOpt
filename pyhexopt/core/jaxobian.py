@@ -1,7 +1,8 @@
 # fast_hex_jacobian_jax.py
+from functools import partial
+
 import jax
 import jax.numpy as jnp
-import meshio
 import numpy as np
 from jax import lax
 
@@ -20,7 +21,7 @@ REF_SIGNS = jnp.array(
     ],
     dtype=jnp.float32,
 )
-GAUSS_POINTS = np.array(
+GAUSS_POINTS = jnp.array(
     [
         [-1, -1, -1],
         [1, -1, -1],
@@ -31,7 +32,7 @@ GAUSS_POINTS = np.array(
         [-1, 1, 1],
         [1, 1, 1],
     ],
-    dtype=float,
+    dtype=jnp.float32,
 )
 
 
@@ -85,6 +86,7 @@ def _compute_jacobians_at_points(nodes_xyz, dN_at_q):
     return J, detJ
 
 
+@partial(jax.jit, static_argnames=("dtype"))
 def dN_trilinear_at_samples(xi_eta_zeta, dtype=jnp.float32):
     """
     Compute dN/dxi, dN/deta, dN/dzeta for trilinear hexahedron
@@ -113,82 +115,6 @@ def dN_trilinear_at_samples(xi_eta_zeta, dtype=jnp.float32):
     # Stack into shape (Q, 8, 3) with order (d/dxi, d/deta, d/dzeta)
     dN = jnp.stack([dN_xi, dN_eta, dN_zeta], axis=-1)  # (Q,8,3)
     return dN.astype(dtype)
-
-
-def compute_jacobians(mesh, dtype=jnp.float32, at_center=True, sample_points=None, chunk_size=None, verbose=True):
-    """
-    High-level function:
-      mesh_file: path readable by meshio
-      dtype: jnp.float32 or jnp.float64
-      at_center: if True compute at element center (0,0,0). If False, sample_points must be provided.
-      sample_points: array-like (Q,3) of (xi,eta,zeta) in [-1,1] for which to compute Jacobians
-      chunk_size: if provided, processes elements in chunks to save memory
-    Returns:
-      Js, detJs  (both numpy arrays on host)
-        - If at_center:  Js shape (E,3,3), detJs shape (E,)
-        - else: Js shape (E,Q,3,3), detJs shape (E,Q)
-    """
-    points = mesh.points.astype(np.float64)  # numpy array (N,3)
-    # prefer 'hexahedron' cell type; meshio provides cells_dict convenience
-    if "hexahedron" in mesh.cells_dict:
-        cells = mesh.cells_dict["hexahedron"].astype(np.int64)  # (E,8)
-    else:
-        # try finding a hex type in mesh.cells
-        found = None
-        for block in mesh.cells:
-            if block.type in ("hexahedron", "hex8", "hex"):
-                found = block.data
-                break
-        if found is None:
-            msg = "No hexahedron cells found in mesh."
-            raise ValueError(msg)
-        cells = found.astype(np.int64)
-
-    E = cells.shape[0]
-    if verbose:
-        print(f"Mesh has {points.shape[0]} points, {E} hexahedral elements.")
-
-    # Gather node coordinates per element -> (E,8,3)
-    node_coords = points[cells]  # numpy -> shape (E,8,3)
-    node_coords = jnp.asarray(node_coords, dtype=dtype)
-
-    if at_center:
-        # dN at center (xi=eta=zeta=0) => simplifies to 1/8 * REF_SIGNS
-        dN_center = (REF_SIGNS * (1.0 / 8.0)).astype(dtype)  # (8,3)
-
-        # optionally chunked processing
-        if chunk_size is None:
-            J, detJ = _compute_center_jacobians(node_coords, dN_center)
-            return np.array(J), np.array(detJ)
-        else:
-            Js = []
-            dets = []
-            for i0 in range(0, E, chunk_size):
-                i1 = min(E, i0 + chunk_size)
-                Jc, detc = _compute_center_jacobians(node_coords[i0:i1], dN_center)
-                Js.append(np.array(Jc))
-                dets.append(np.array(detc))
-            return np.vstack(Js), np.concatenate(dets)
-
-    else:
-        # sample_points must be provided
-        if sample_points is None:
-            msg = "sample_points must be provided when at_center=False."
-            raise ValueError(msg)
-        dN_q = dN_trilinear_at_samples(sample_points, dtype=dtype)  # (Q,8,3)
-
-        if chunk_size is None:
-            J, detJ = _compute_jacobians_at_points(node_coords, dN_q)
-            return np.array(J), np.array(detJ)
-        else:
-            Js = []
-            dets = []
-            for i0 in range(0, E, chunk_size):
-                i1 = min(E, i0 + chunk_size)
-                Jc, detc = _compute_jacobians_at_points(node_coords[i0:i1], dN_q)
-                Js.append(np.array(Jc))
-                dets.append(np.array(detc))
-            return np.vstack(Js), np.vstack(dets)
 
 
 @jax.jit
@@ -221,6 +147,7 @@ def _scaled_jac_from_points(J, detJ, eps=0.0):
 
     Returns:
         SJ: (E,Q) array of scaled Jacobians
+
     """
     # Columns of J are the mapped reference axes
     Jx = J[..., :, 0]  # (E,Q,3)
@@ -240,103 +167,95 @@ def _scaled_jac_from_points(J, detJ, eps=0.0):
     return SJ
 
 
-def compute_scaled_jacobians(
-    mesh, dtype=jnp.float32, at_center=True, sample_points=None, chunk_size=None, verbose=True, eps=0.0
+def compute_scaled_jacobians_from_coords_not_jax(  # noqa: D417, PLR0913
+    node_coords,
+    dtype=jnp.float32,
+    at_center=True,
+    sample_points=None,
+    chunk_size=None,
+    eps=0.0,
 ):
     """
-    Compute scaled Jacobian per element.
+    Compute scaled Jacobian per element from node coordinates.
 
-    Returns:
-      SJ, (numpy array on host)
-        - if at_center: shape (E,)
-        - else: shape (E,Q)
-    Parameters:
-      eps: optional small floor for denominator to avoid inf/nan (default 0.0: no floor)
+    Parameters
+    ----------
+    node_coords : jnp.ndarray (E,8,3)
+        Coordinates of the hexahedron nodes per element
+    at_center : bool, default True
+        If True, compute at element center (ξ,η,ζ)=(0,0,0)
+    sample_points : array-like (Q,3), optional
+        Parent coordinates for evaluation (if not at_center)
+    chunk_size : int, optional
+        Process elements in chunks (for memory)
+    eps : float, default 0.0
+        Small floor for denominator to avoid inf/nan
+
+    Returns
+    -------
+    SJ : np.ndarray
+        Scaled Jacobian, shape (E,) or (E,Q)
+
     """
-    points = mesh.points.astype(np.float64)
-    if "hexahedron" in mesh.cells_dict:
-        cells = mesh.cells_dict["hexahedron"].astype(np.int64)
-    else:
-        found = None
-        for block in mesh.cells:
-            if block.type in ("hexahedron", "hex8", "hex"):
-                found = block.data
-                break
-        if found is None:
-            raise ValueError("No hexahedron cells found in mesh.")
-        cells = found.astype(np.int64)
-
-    E = cells.shape[0]
-    if verbose:
-        print(f"Mesh has {points.shape[0]} points, {E} hexahedral elements.")
-
-    node_coords = points[cells]  # (E,8,3) numpy
-    node_coords = jnp.asarray(node_coords, dtype=dtype)
+    E = node_coords.shape[0]
 
     if at_center:
         dN_center = (REF_SIGNS * (1.0 / 8.0)).astype(dtype)
         if chunk_size is None:
-            J, detJ = _compute_center_jacobians(node_coords, dN_center)  # (E,3,3), (E,)
+            J, detJ = _compute_center_jacobians(node_coords, dN_center)
             SJ = _scaled_jac_from_center(J, detJ, eps=eps)
             return np.array(SJ)
-        else:
-            parts = []
-            for i0 in range(0, E, chunk_size):
-                i1 = min(E, i0 + chunk_size)
-                Jc, detc = _compute_center_jacobians(node_coords[i0:i1], dN_center)
-                Sjc = _scaled_jac_from_center(Jc, detc, eps=eps)
-                parts.append(np.array(Sjc))
-            return np.concatenate(parts)
+        parts = []
+        for i0 in range(0, E, chunk_size):
+            i1 = min(E, i0 + chunk_size)
+            Jc, detc = _compute_center_jacobians(node_coords[i0:i1], dN_center)
+            Sjc = _scaled_jac_from_center(Jc, detc, eps=eps)
+            parts.append(np.array(Sjc))
+        return np.concatenate(parts)
 
-    else:
-        if sample_points is None:
-            raise ValueError("sample_points must be provided when at_center=False.")
-        dN_q = dN_trilinear_at_samples(sample_points, dtype=dtype)  # (Q,8,3)
+    # not at center -> use supplied quadrature points
+    if sample_points is None:
+        msg = "sample_points must be provided when at_center=False."
+        raise ValueError(msg)
 
-        if chunk_size is None:
-            J, detJ = _compute_jacobians_at_points(node_coords, dN_q)  # (E,Q,3,3), (E,Q)
-            SJ = _scaled_jac_from_points(J, detJ, eps=eps)
-            return np.array(SJ)
-        else:
-            parts = []
-            for i0 in range(0, E, chunk_size):
-                i1 = min(E, i0 + chunk_size)
-                Jc, detc = _compute_jacobians_at_points(node_coords[i0:i1], dN_q)
-                Sjc = _scaled_jac_from_points(Jc, detc, eps=eps)
-                parts.append(np.array(Sjc))
-            return np.vstack(parts)
+    dN_q = dN_trilinear_at_samples(sample_points, dtype=dtype)  # (Q,8,3)
+
+    if chunk_size is None:
+        J, detJ = _compute_jacobians_at_points(node_coords, dN_q)
+        SJ = _scaled_jac_from_points(J, detJ, eps=eps)
+        return np.array(SJ)
+    parts = []
+    for i0 in range(0, E, chunk_size):
+        i1 = min(E, i0 + chunk_size)
+        Jc, detc = _compute_jacobians_at_points(node_coords[i0:i1], dN_q)
+        Sjc = _scaled_jac_from_points(Jc, detc, eps=eps)
+        parts.append(np.array(Sjc))
+    return np.vstack(parts)
 
 
-if __name__ == "__main__":
-    # quick demo using a single unit cube (mesh created inline for test)
-    # Node ordering follows meshio / VTK convention:
-    # bottom: 0,1,2,3 ; top: 4,5,6,7
-    unit_cube_nodes = np.array(
-        [
-            [0.0, 0.0, 0.0],  # 0
-            [1.0, 0.0, 0.0],  # 1
-            [1.0, 1.0, 0.0],  # 2
-            [0.0, 1.0, 0.0],  # 3
-            [0.0, 0.0, 1.0],  # 4
-            [1.0, 0.0, 1.0],  # 5
-            [1.0, 1.0, 1.0],  # 6
-            [0.0, 1.0, 1.0],  # 7
-        ],
-        dtype=np.float64,
-    )
-    # single element connectivity
-    cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]], dtype=np.int64)
+@partial(jax.jit, static_argnames=("at_center", "dtype"))
+def compute_scaled_jacobians_from_coords(
+    node_coords: jnp.ndarray,
+    dtype=jnp.float32,
+    at_center: bool = True,
+    sample_points: jnp.ndarray | None = None,
+    eps: float = 0.0,
+) -> jnp.ndarray:
+    """
+    Fully JAX version: compute scaled Jacobian per element from node coordinates.
+    """
+    node_coords = jnp.asarray(node_coords, dtype=dtype)
 
-    # pack a tiny "mesh" to test compute_jacobians without disk IO:
-    # reuse core functions by creating temporary arrays
-    node_coords = jnp.asarray(unit_cube_nodes[cells], dtype=jnp.float32)  # (1,8,3)
-    dN_center = (REF_SIGNS * 0.125).astype(jnp.float32)
+    if at_center:
+        dN_center = jnp.asarray(REF_SIGNS, dtype=dtype) * (1.0 / 8.0)
+        J, detJ = _compute_center_jacobians(node_coords, dN_center)
+        SJ = _scaled_jac_from_center(J, detJ, eps=eps)
+        return SJ
 
-    # warm-up jit compile
-    print("Warming up JIT...")
-    J_test, det_test = _compute_center_jacobians(node_coords, dN_center)
-    print("J (unit cube):\n", np.array(J_test[0]))
-    print("detJ (unit cube):", float(np.array(det_test[0])))
+    if sample_points is None:
+        raise ValueError("sample_points must be provided when at_center=False.")
 
-    # expected determinant for mapping from [-1,1]^3 -> unit cube [0,1]^3 is 1/8 = 0.125
-    print("expected det:", 1.0 / 8.0)
+    dN_q = dN_trilinear_at_samples(sample_points, dtype=dtype)
+    J, detJ = _compute_jacobians_at_points(node_coords, dN_q)
+    SJ = _scaled_jac_from_points(J, detJ, eps=eps)
+    return SJ
