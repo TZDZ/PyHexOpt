@@ -23,7 +23,10 @@ def test_real_mesh_masked_grad():
     fixed_indices = jnp.array(boundary)  # e.g., one face is fixed
     free_mask = jnp.ones((points.shape[0],), dtype=bool).at[fixed_indices].set(False)
     free_disp0 = disp[free_mask]
+    assert objective_free(free_disp0, points, cells, free_mask) > 0
     grad = jax.grad(objective_free)(free_disp0, points, cells, free_mask)
+    np.testing.assert_allclose(grad[0], 0.0)
+    assert np.any(np.abs(grad[1]) > 0.01)
     assert grad.shape[0] == len(points) - len(boundary)
     disp_ = expand_disp_from_mask(free_disp0, free_mask)
     new_points = apply_nodal_displacements(points, disp_)
@@ -34,5 +37,4 @@ def test_real_mesh_masked_grad():
 
 
 if __name__ == "__main__":
-    test_real_mesh_masked_grad()
-    # pytest.main([__file__])
+    pytest.main([__file__])
