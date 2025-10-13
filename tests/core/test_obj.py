@@ -152,5 +152,4 @@ def test_expand_disp_from_mask_node_position():
 
 
 if __name__ == "__main__":
-    test_real_mesh_masked_grad()
-    # pytest.main([__file__])
+    pytest.main([__file__])

@@ -32,18 +32,16 @@ def reduce_element_deltas_to_nodal(
     """
     Convert per-element-per-corner deltas to per-node aggregated deltas.
 
-    Parameters
-    ----------
-    cells : (E,8) int array of node indices
-    dnode_coords : (E,8,3) per-element deltas for each corner
-    N_nodes : int, number of global nodes
-    mode : 'average' or 'sum'
-      - 'average' divides the aggregated sum by the number of contributions per node.
-      - 'sum' returns the summed delta.
+    Args:
+        cells: (E,8) int array of node indices.
+        dnode_coords: (E,8,3) per-element deltas for each corner.
+        N_nodes: int, number of global nodes.
+        mode: str, either 'average' or 'sum'.
+            'average' divides the aggregated sum by the number of contributions per node.
+            'sum' returns the summed delta.
 
-    Returns
-    -------
-    nodal_delta : (N_nodes, 3)
+    Returns:
+        nodal_delta: (N_nodes, 3) array of aggregated nodal deltas.
 
     """
     # flatten
