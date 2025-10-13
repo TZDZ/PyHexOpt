@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 
 @jax.jit
-def nodes_from_points(points: jnp.ndarray, cells: jnp.ndarray) -> jnp.ndarray:
+def nodes_from_points(points: jax.Array, cells: jax.Array) -> jax.Array:
     """
     Gather per-element node coordinates.
     points: (N,3)
@@ -17,15 +17,15 @@ def nodes_from_points(points: jnp.ndarray, cells: jnp.ndarray) -> jnp.ndarray:
 
 
 @jax.jit
-def apply_nodal_displacements(points: jnp.ndarray, disp: jnp.ndarray):
+def apply_nodal_displacements(points: jax.Array, disp: jax.Array):
     """Add disp (N,3) to points (N,3), returns new points."""
     return points + disp
 
 
 @partial(jax.jit, static_argnames=("mode", "N_nodes"))
 def reduce_element_deltas_to_nodal(
-    cells: jnp.ndarray,
-    dnode_coords: jnp.ndarray,
+    cells: jax.Array,
+    dnode_coords: jax.Array,
     N_nodes: int,
     mode: str = "average",
 ):
@@ -68,9 +68,9 @@ def reduce_element_deltas_to_nodal(
 
 @jax.jit
 def update_points_from_element_deltas(
-    points: jnp.ndarray,
-    cells: jnp.ndarray,
-    dnode_coords: jnp.ndarray,
+    points: jax.Array,
+    cells: jax.Array,
+    dnode_coords: jax.Array,
     mode: str = "average",
 ):
     """

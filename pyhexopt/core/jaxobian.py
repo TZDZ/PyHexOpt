@@ -180,7 +180,7 @@ def compute_scaled_jacobians_from_coords_not_jax(  # noqa: D417, PLR0913
 
     Parameters
     ----------
-    node_coords : jnp.ndarray (E,8,3)
+    node_coords : jax.Array (E,8,3)
         Coordinates of the hexahedron nodes per element
     at_center : bool, default True
         If True, compute at element center (ξ,η,ζ)=(0,0,0)
@@ -235,15 +235,13 @@ def compute_scaled_jacobians_from_coords_not_jax(  # noqa: D417, PLR0913
 
 @partial(jax.jit, static_argnames=("at_center", "dtype"))
 def compute_scaled_jacobians_from_coords(
-    node_coords: jnp.ndarray,
+    node_coords: jax.Array,
     dtype=jnp.float32,
     at_center: bool = True,
-    sample_points: jnp.ndarray | None = None,
+    sample_points: jax.Array | None = None,
     eps: float = 0.0,
-) -> jnp.ndarray:
-    """
-    Fully JAX version: compute scaled Jacobian per element from node coordinates.
-    """
+) -> jax.Array:
+    """Fully JAX version: compute scaled Jacobian per element from node coordinates."""
     node_coords = jnp.asarray(node_coords, dtype=dtype)
 
     if at_center:
@@ -253,7 +251,8 @@ def compute_scaled_jacobians_from_coords(
         return SJ
 
     if sample_points is None:
-        raise ValueError("sample_points must be provided when at_center=False.")
+        msg = "sample_points must be provided when at_center=False."
+        raise ValueError(msg)
 
     dN_q = dN_trilinear_at_samples(sample_points, dtype=dtype)
     J, detJ = _compute_jacobians_at_points(node_coords, dN_q)

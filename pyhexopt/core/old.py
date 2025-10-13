@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -105,7 +106,7 @@ def test_jacobians_at_points_unit_cube():
     )
 
     # pack into (E,8,3) with E=1
-    nodes_xyz = jnp.expand_dims(jnp.array(coords, dtype=jnp.float32), axis=0)  # (1,8,3)
+    nodes_xyz = jnp.expand_dims(jax.Array(coords, dtype=jnp.float32), axis=0)  # (1,8,3)
 
     # choose a set of sample points (xi,eta,zeta) including center and some corners / midpoints
     sample_points = np.array(

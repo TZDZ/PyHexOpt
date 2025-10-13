@@ -1,15 +1,16 @@
+import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
 
 
-def extract_hex_node_coords(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True) -> jnp.ndarray:
+def extract_hex_node_coords(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True) -> jax.Array:
     """
     Extract node coordinates for all hexahedral elements in a meshio mesh.
 
     Returns
     -------
-      node_coords: jnp.ndarray (E, 8, 3)
+      node_coords: jax.Array (E, 8, 3)
         coordinates of the 8 nodes for each hexahedral element
 
     """
@@ -42,10 +43,11 @@ def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True)
 
     Returns
     -------
-    points : jnp.ndarray (N,3)
+    points : jax.Array (N,3)
         All mesh vertex coordinates (dtype given by argument)
-    cells : jnp.ndarray (E,8)
+    cells : jax.Array (E,8)
         Hexahedral element connectivity (int32)
+
     """
     points = mesh.points.astype(np.float64)
 

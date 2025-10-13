@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
@@ -27,8 +28,8 @@ def test_det3x3_batch_known_values():
     mats = jnp.stack(
         [
             jnp.eye(3),
-            jnp.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]]),
-            jnp.array([[1.0, 2.0, 3.0], [0.0, 1.0, 4.0], [5.0, 6.0, 0.0]]),
+            jax.Array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 4.0]]),
+            jax.Array([[1.0, 2.0, 3.0], [0.0, 1.0, 4.0], [5.0, 6.0, 0.0]]),
         ]
     )
     det_ref = np.linalg.det(np.array(mats))
@@ -38,7 +39,7 @@ def test_det3x3_batch_known_values():
 
 def test_det3x3_negative_and_zero():
     """Test negative and zero determinant behavior."""
-    mats = jnp.array(
+    mats = jax.Array(
         [
             [[1, 0, 0], [0, 1, 0], [0, 0, -1]],  # det = -1
             [[1, 2, 3], [2, 4, 6], [1, 0, 1]],  # det = 0 (rows dependent)
@@ -84,7 +85,7 @@ def test_compute_center_jacobians_random_batch():
     """Compare _compute_center_jacobians results to explicit numpy calculation for random elements."""
     rng = np.random.default_rng(0)
     E = 5
-    nodes_xyz = jnp.array(rng.random((E, 8, 3)), dtype=jnp.float32)
+    nodes_xyz = jax.Array(rng.random((E, 8, 3)), dtype=jnp.float32)
     dN_center = (REF_SIGNS * 0.125).astype(jnp.float32)
 
     J_jax, det_jax = _compute_center_jacobians(nodes_xyz, dN_center)
@@ -114,7 +115,7 @@ def test_jacobians_at_points_random_batch_against_numpy():
     dN_q = dN_trilinear_at_samples(sample_pts, dtype=jnp.float32)  # (Q,8,3)
 
     # run jax function
-    J_jax, det_jax = _compute_jacobians_at_points(jnp.array(nodes), dN_q)
+    J_jax, det_jax = _compute_jacobians_at_points(jax.Array(nodes), dN_q)
 
     # numpy reference: J[e,q,a,b] = sum_i nodes[e,i,a] * dN_q[q,i,b]
     J_ref = np.einsum("eia,qib->eqab", nodes, np.array(dN_q))
@@ -140,7 +141,7 @@ def test_jacobians_at_points_shape_and_broadcasting():
 
     dN_q = dN_trilinear_at_samples(sample_pts, dtype=jnp.float32)  # (1,8,3)
 
-    J_jax, det_jax = _compute_jacobians_at_points(jnp.array(nodes), dN_q)
+    J_jax, det_jax = _compute_jacobians_at_points(jax.Array(nodes), dN_q)
 
     assert np.array(J_jax).shape == (E, Q, 3, 3)
     assert np.array(det_jax).shape == (E, Q)
