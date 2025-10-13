@@ -2,13 +2,13 @@ import contextlib
 import logging
 from pathlib import Path
 
-from pathlib import Path
 import yaml
 
 setting_file = Path(__file__).parent.parent / "settings.yaml"
 with setting_file.open("r") as f:
     params = yaml.safe_load(f)
 LOGGER_NAME = params.get("logger_name", "pyhexopt")
+
 
 def configure_logger(level=logging.INFO, log_file: str | Path | None = None) -> logging.Logger:
     root = logging.getLogger(LOGGER_NAME)
