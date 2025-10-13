@@ -12,7 +12,7 @@ def apply_masked_displacement(points: ArrayLike, disp: ArrayLike, free_mask: Arr
     return points + disp * mask
 
 
-def objective(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_mask: ArrayLike):
+def objective(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_mask: ArrayLike) -> jax.Array:
     """Example: minimize average deviation of Jacobian determinant from 1."""
     moved_points = apply_masked_displacement(points, disp, free_mask)
     node_coords = nodes_from_points(moved_points, cells)

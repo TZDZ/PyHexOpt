@@ -44,6 +44,19 @@ def test_real_mesh_masked():
     assert obj > 0
 
 
+def test_real_mesh_masked_grad():
+    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+    disp = jnp.zeros_like(points)  # shape (N,3)
+    disp = disp.at[27].set(jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32))
+    N = points.shape[0]
+    fixed_indices = jnp.array([0, 3, 4, 7])  # e.g., one face is fixed
+    free_mask = jnp.ones((N,), dtype=bool).at[fixed_indices].set(False)
+    free_disp0 = disp[free_mask]
+    grad = jax.grad(objective_free)(free_disp0, points, cells, free_mask)
+    assert grad.shape == free_disp0.shape
+
+
 def make_case():
     """Utility: creates a small fake displacement and mask."""
     N = 6
@@ -139,4 +152,5 @@ def test_expand_disp_from_mask_node_position():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_real_mesh_masked_grad()
+    # pytest.main([__file__])
