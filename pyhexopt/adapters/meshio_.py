@@ -60,7 +60,8 @@ def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True)
                 found = block.data
                 break
         if found is None:
-            raise ValueError("No hexahedron cells found in mesh.")
+            msg = "No hexahedron cells found in mesh."
+            raise ValueError(msg)
         cells = found.astype(np.int64)
 
     if verbose:

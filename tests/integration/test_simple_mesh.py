@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -50,7 +51,10 @@ def test_real_mesh_masked_grad():
 
 
 def test_end_to_end():
-    main(r"tests\integration\bad_mesh_simple.msh", r"tests\integration\corrected_simple_mesh.msh")
+    main(Path(r"tests/integration/bad_mesh_simple.msh"), Path(r"tests\integration\corrected_simple_mesh.msh"))
+    # good_mesh = meshio.read(Path(r"tests/integration/test_simple_mesh_out.msh"))
+    # corrected_msh = meshio.read(Path(r"tests\integration\corrected_simple_mesh.msh"))
+    # np.testing.assert_allclose(good_mesh.points, corrected_msh.points)
 
 
 if __name__ == "__main__":

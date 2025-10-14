@@ -8,6 +8,7 @@ from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.integrated import compute_scaled_jacobians
 from pyhexopt.core.jaxobian import GAUSS_POINTS
 from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
+from pyhexopt.core.utils import detect_free_edge_nodes
 
 
 def make_hex_mesh(points):
@@ -159,5 +160,15 @@ def test_move_mode():
         np.testing.assert_approx_equal(a, b)
 
 
+def test_edges():
+    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    nodes, mask = detect_free_edge_nodes(msh)
+    assert len(nodes) == 32
+    assert 12 in nodes
+    assert 19 in nodes
+    assert 41 not in nodes
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_edges()
