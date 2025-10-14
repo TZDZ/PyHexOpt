@@ -10,6 +10,7 @@ from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, objective_free
 from pyhexopt.core.utils import get_boundary_nodes
+from pyhexopt.main import main
 
 
 def test_real_mesh_masked_grad():
@@ -46,6 +47,10 @@ def test_real_mesh_masked_grad():
     new_mesh.write("tests/integration/test_simple_mesh_out.msh", file_format="gmsh")
     msh = meshio.read(r"tests/integration/test_simple_mesh_out.msh")
     np.testing.assert_allclose(np.array(msh.points[moving_node]), move + initpos)
+
+
+def test_end_to_end():
+    main(r"tests\integration\bad_mesh_simple.msh", r"tests\integration\corrected_simple_mesh.msh")
 
 
 if __name__ == "__main__":
