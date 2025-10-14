@@ -8,6 +8,7 @@ dependencies = [
     "ipykernel>=6.30.1",
     "jax>=0.7.2",
     "meshio>=5.3.5",
+    "optax>=0.2.6",
     "pathlib>=1.0.1",
     "pyaml>=25.7.0",
     "pytest>=8.4.2",
