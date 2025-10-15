@@ -2,7 +2,14 @@ import meshio
 import numpy as np
 import pytest
 
-from pyhexopt.core.utils import compute_node_normals_from_faces, detect_free_edge_nodes, face_normal, get_boundary_nodes
+from pyhexopt.core.utils import (
+    build_tangent_bases,
+    compute_node_normals_from_faces,
+    face_normal,
+    get_boundary_nodes,
+    get_edge_nodes,
+    get_interior_surface_nodes,
+)
 
 
 def test_single_hex_boundary_nodes():
@@ -71,7 +78,7 @@ def test_two_adjacent_hexes_shared_face():
 
 
 def test_3x3():
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
     bnd_nodes = get_boundary_nodes(msh)
     assert len(bnd_nodes) == 56
     for n in (59, 60, 63, 64, 61, 62, 57, 58):
@@ -237,7 +244,7 @@ def test_no_boundary_faces_internal_mesh():
     (since all boundary faces meet at sharp 90°).
     """
     mesh = _make_unit_cube_hex_mesh()
-    edge_nodes, edge_mask = detect_free_edge_nodes(mesh, angle_deg=45.0)
+    edge_nodes, edge_mask = get_edge_nodes(mesh, angle_deg=45.0)
 
     # All boundary nodes are cube corners
     boundary_nodes = get_boundary_nodes(mesh)
@@ -270,9 +277,9 @@ def test_angle_threshold_controls_detection():
     mesh = meshio.Mesh(pts, [("hexahedron", np.array([hex1]))])
 
     # small threshold → still consider flat faces connected
-    _, mask_loose = detect_free_edge_nodes(mesh, angle_deg=1.0)
+    _, mask_loose = get_edge_nodes(mesh, angle_deg=1.0)
     # tight threshold → classify edges as sharp
-    _, mask_strict = detect_free_edge_nodes(mesh, angle_deg=89.0)
+    _, mask_strict = get_edge_nodes(mesh, angle_deg=89.0)
 
     num_loose = mask_loose.sum()
     num_strict = mask_strict.sum()
@@ -282,7 +289,7 @@ def test_angle_threshold_controls_detection():
 
 def test_return_types_and_shapes():
     mesh = _make_unit_cube_hex_mesh()
-    edge_nodes, edge_mask = detect_free_edge_nodes(mesh, angle_deg=45.0)
+    edge_nodes, edge_mask = get_edge_nodes(mesh, angle_deg=45.0)
     assert isinstance(edge_nodes, np.ndarray)
     assert edge_mask.dtype == bool
     assert edge_mask.shape[0] == mesh.points.shape[0]
@@ -302,10 +309,137 @@ def test_compute_node_normals_simple_plane():
     )
     faces = [(0, 1, 2, 3)]
     face_normals = np.array([[0, 0, 1]])
-    node_normals = compute_node_normals_from_faces(points, faces, face_normals)
+    node_normals = compute_node_normals_from_faces(points, faces)
     # all nodes should have normal [0,0,1]
     for n in node_normals:
         assert np.allclose(n, [0, 0, 1])
+
+
+def test_single_vertical_normal():
+    """A node with normal (0,0,1) should yield tangents in XY plane."""
+    points = np.zeros((1, 3))
+    normals = np.array([[0.0, 0.0, 1.0]])
+    movable = np.array([0], dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+
+    t1, t2 = T1[0], T2[0]
+    n = normals[0]
+
+    # All orthogonal
+    assert np.allclose(np.dot(t1, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t2, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t1, t2), 0.0, atol=1e-7)
+
+    # Unit lengths
+    assert np.allclose(np.linalg.norm(t1), 1.0)
+    assert np.allclose(np.linalg.norm(t2), 1.0)
+
+
+def test_inclined_normal():
+    """Normals not aligned with global axes still produce orthonormal tangents."""
+    points = np.zeros((1, 3))
+    normals = np.array([[1.0, 1.0, 1.0]]) / np.sqrt(3.0)
+    movable = np.array([0], dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+    t1, t2 = T1[0], T2[0]
+    n = normals[0]
+
+    # Verify orthonormality
+    assert np.allclose(np.dot(t1, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t2, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t1, t2), 0.0, atol=1e-7)
+    assert np.allclose(np.linalg.norm(t1), 1.0)
+    assert np.allclose(np.linalg.norm(t2), 1.0)
+
+    # Tangents should lie roughly in plane perpendicular to n
+    assert np.allclose(np.dot(n, np.cross(t1, t2)), 1.0, atol=1e-6) or np.allclose(
+        np.dot(n, np.cross(t1, t2)), -1.0, atol=1e-6
+    )
+
+
+def test_multiple_nodes_consistent_shapes():
+    """Should return correct shapes for multiple movable nodes."""
+    points = np.zeros((5, 3))
+    normals = np.tile(np.array([[0, 0, 1.0]]), (5, 1))
+    movable = np.array([0, 2, 4], dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+
+    assert T1.shape == (3, 3)
+    assert T2.shape == (3, 3)
+    for i in range(3):
+        n = normals[movable[i]]
+        assert np.allclose(np.dot(T1[i], n), 0.0, atol=1e-7)
+        assert np.allclose(np.dot(T2[i], n), 0.0, atol=1e-7)
+
+
+def test_degenerate_normal_fallback():
+    """When normal is zero vector, should still return valid orthonormal tangents."""
+    points = np.zeros((1, 3))
+    normals = np.array([[0.0, 0.0, 0.0]])
+    movable = np.array([0], dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+    t1, t2 = T1[0], T2[0]
+
+    # At least they should be normalized and orthogonal
+    assert np.isfinite(t1).all()
+    assert np.isfinite(t2).all()
+    assert np.allclose(np.linalg.norm(t1), 1.0)
+    assert np.allclose(np.linalg.norm(t2), 1.0)
+    assert np.allclose(np.dot(t1, t2), 0.0, atol=1e-7)
+
+
+def test_parallel_normals_different_refs():
+    """Normals parallel to default reference vector should trigger fallback to alternative."""
+    points = np.zeros((1, 3))
+    normals = np.array([[1.0, 0.0, 0.0]])  # parallel to a_default
+    movable = np.array([0], dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+    t1, t2 = T1[0], T2[0]
+    n = normals[0]
+
+    # Should still produce orthogonal, normalized tangents
+    assert np.allclose(np.dot(t1, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t2, n), 0.0, atol=1e-7)
+    assert np.allclose(np.dot(t1, t2), 0.0, atol=1e-7)
+    assert np.allclose(np.linalg.norm(t1), 1.0)
+    assert np.allclose(np.linalg.norm(t2), 1.0)
+
+
+def test_small_random_normals_stability():
+    """Ensure no NaNs or zero-length tangents for random normals."""
+    rng = np.random.default_rng(0)
+    normals = rng.normal(size=(100, 3))
+    normals /= np.linalg.norm(normals, axis=1, keepdims=True) + 1e-12
+    points = np.zeros_like(normals)
+    movable = np.arange(100, dtype=int)
+
+    T1, T2 = build_tangent_bases(points, normals, movable)
+    assert np.isfinite(T1).all()
+    assert np.isfinite(T2).all()
+    assert np.allclose(np.linalg.norm(T1, axis=1), 1.0, atol=1e-7)
+    assert np.allclose(np.linalg.norm(T2, axis=1), 1.0, atol=1e-7)
+
+
+def test_edges():
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
+    nodes, mask = get_edge_nodes(msh)
+    assert len(nodes) == 32
+    assert 12 in nodes
+    assert 19 in nodes
+    assert 41 not in nodes
+
+
+def test_free_surface_nodes():
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
+    nodes = get_interior_surface_nodes(msh)
+    assert len(nodes) == 6 * 4
+    assert 33 in nodes
+    assert 12 not in nodes
 
 
 if __name__ == "__main__":

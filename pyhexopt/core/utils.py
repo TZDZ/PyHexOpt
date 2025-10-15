@@ -3,6 +3,8 @@ from collections import defaultdict
 import meshio
 import numpy as np
 
+from pyhexopt.adapters.meshio_ import extract_points_and_cells
+
 _EPS = 1e-12
 
 
@@ -196,7 +198,7 @@ def detect_edge_mask_from_face_normals(
     return edge_mask
 
 
-def detect_free_edge_nodes(mesh, angle_deg: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
+def get_edge_nodes(mesh, angle_deg: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
     """
     Top-level function: returns (edge_nodes_array, edge_mask_bool_array).
     Composed of the smaller functions above, easy to unit-test each piece.
@@ -220,7 +222,7 @@ def detect_free_edge_nodes(mesh, angle_deg: float = 30.0) -> tuple[np.ndarray, n
 def compute_node_normals_from_faces(
     points: np.ndarray,
     faces: list[tuple[int, ...]],
-    face_normals: np.ndarray,
+    # face_normals: np.ndarray,
 ) -> np.ndarray:
     """
     Compute a per-node normal as the average of adjacent boundary face normals.
@@ -244,6 +246,8 @@ def compute_node_normals_from_faces(
     accum = np.zeros((n_points, 3), dtype=float)
     count = np.zeros(n_points, dtype=int)
 
+    face_normals = compute_face_normals(points, faces)
+
     # accumulate normals
     for fi, face in enumerate(faces):
         n = face_normals[fi]
@@ -255,8 +259,110 @@ def compute_node_normals_from_faces(
     with np.errstate(invalid="ignore", divide="ignore"):
         node_normals = np.divide(accum, count[:, None], where=count[:, None] > 0)
         norms = np.linalg.norm(node_normals, axis=1, keepdims=True)
-        node_normals = np.divide(node_normals, norms, where=norms > 1e-12)
+        node_normals = np.divide(node_normals, norms, where=norms > _EPS)
 
     # fill non-surface nodes with zero normal
     node_normals[np.isnan(node_normals)] = 0.0
     return node_normals
+
+
+def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_indices: np.ndarray):
+    """
+    Build an orthonormal tangent basis (t1, t2) for each movable node.
+    - points: (N,3)
+    - node_normals: (N,3) unit normals (zero for non-boundary)
+    - movable_indices: (M,) indices of nodes to build bases for
+
+    Returns:
+    - T1: (M,3)
+    - T2: (M,3)
+
+    """
+    N = points.shape[0]
+    M = movable_indices.shape[0]
+    T1 = np.zeros((M, 3), dtype=float)
+    T2 = np.zeros((M, 3), dtype=float)
+
+    # choose reference vector a; per-vertex adapt if nearly parallel
+    a_default = np.array([1.0, 0.0, 0.0])
+    a_alt = np.array([0.0, 1.0, 0.0])
+
+    for i, vi in enumerate(movable_indices):
+        n = node_normals[int(vi)]
+        norm_n = np.linalg.norm(n)
+        if norm_n < _EPS:
+            # degenerate normal -> fallback to local PCA or mark not-movable upstream
+            # here we set tangents to canonical basis (will be orthogonalized below)
+            t1 = np.array([1.0, 0.0, 0.0])
+        else:
+            # pick a reference vector not parallel to n
+            a = a_default if abs(np.dot(n, a_default)) < 0.9 else a_alt
+            t1 = np.cross(a, n)
+            t1_norm = np.linalg.norm(t1)
+            if t1_norm < _EPS:
+                # fallback to different a
+                a = a_alt
+                t1 = np.cross(a, n)
+                t1_norm = np.linalg.norm(t1)
+                if t1_norm < _EPS:
+                    # last resort: choose arbitrary orthonormal
+                    t1 = np.array([1.0, 0.0, 0.0])
+                    t1_norm = 1.0
+            t1 = t1 / t1_norm
+
+        t2 = np.cross(n, t1)
+        t2_norm = np.linalg.norm(t2)
+        if t2_norm < _EPS:
+            # if t2 degenerate, pick perp vector
+            t2 = np.cross(n, t1 + 1e-6)
+            t2_norm = np.linalg.norm(t2)
+            if t2_norm < _EPS:
+                t2 = np.array([0.0, 1.0, 0.0])
+                t2_norm = 1.0
+        t2 = t2 / t2_norm
+
+        T1[i] = t1
+        T2[i] = t2
+
+    return T1, T2
+
+
+def get_interior_surface_nodes(mesh):
+    boundary_nodes = get_boundary_nodes(mesh)
+    edge_nodes, _ = get_edge_nodes(mesh)
+    surface_nodes = np.setdiff1d(boundary_nodes, edge_nodes, assume_unique=True)
+    return surface_nodes
+
+
+def prepare_dof_masks_and_bases(mesh):
+    """
+    Split nodes into fixed, surface (2 ddl), and free (3 ddl).
+
+    Returns
+    -------
+    free_nodes : np.ndarray
+        Indices of fully free nodes (3 ddl).
+    surface_nodes : np.ndarray
+        Indices of tangential-only nodes (2 ddl).
+    fixed_nodes : np.ndarray
+        Indices of fully fixed nodes (0 ddl).
+    T1, T2 : (Ns, 3) arrays
+        Tangent bases for surface nodes.
+
+    """
+    boundary_nodes = get_boundary_nodes(mesh)
+    edge_nodes, _ = get_edge_nodes(mesh)
+
+    surface_nodes = get_interior_surface_nodes(mesh)
+
+    points, _ = extract_points_and_cells(mesh)
+    # interior = all - boundary
+    all_nodes = np.arange(points.shape[0])
+    free_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
+
+    faces = get_boundary_faces(mesh)  # you need this helper
+    normals = compute_node_normals_from_faces(points, faces)
+
+    T1, T2 = build_tangent_bases(points, normals, surface_nodes)
+
+    return free_nodes, surface_nodes, edge_nodes, T1, T2

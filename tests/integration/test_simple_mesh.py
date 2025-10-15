@@ -9,8 +9,8 @@ import pytest
 
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
-from pyhexopt.core.obj import expand_disp_from_mask, objective_free
-from pyhexopt.core.utils import get_boundary_nodes
+from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_free
+from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
 from pyhexopt.main import main
 
 
@@ -20,7 +20,7 @@ def test_real_mesh_masked_grad():
     moving_node = 59  # indexings starts at 0!
 
     ### Lecture du maillage
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    msh = meshio.read(Path(r"tests/integration/square.msh"))
     initpos = np.array(msh.points[moving_node])
 
     ### préproc
@@ -51,11 +51,46 @@ def test_real_mesh_masked_grad():
 
 
 def test_end_to_end():
-    main(Path(r"tests/integration/bad_mesh_simple.msh"), Path(r"tests\integration\corrected_simple_mesh.msh"))
-    # good_mesh = meshio.read(Path(r"tests/integration/test_simple_mesh_out.msh"))
-    # corrected_msh = meshio.read(Path(r"tests\integration\corrected_simple_mesh.msh"))
-    # np.testing.assert_allclose(good_mesh.points, corrected_msh.points)
+    main(Path(r"examples/Square_mesh/bad_mesh_simple.msh"), Path(r"tests\integration\corrected_simple_mesh.msh"))
+    good_mesh = meshio.read(Path(r"tests/integration/square.msh"))
+    corrected_msh = meshio.read(Path(r"tests\integration\corrected_simple_mesh.msh"))
+    np.testing.assert_allclose(good_mesh.points, corrected_msh.points, atol=2e-3)
+
+
+def test_move_mode_surface():
+    mesh_in = meshio.read(r"examples/Square_mesh/square_rot.msh")
+    points, cells = extract_points_and_cells(mesh_in, dtype=jnp.float32)
+    free_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(mesh_in)
+
+    N = points.shape[0]
+    is_free = np.zeros(N, dtype=bool)
+    is_free[free_nodes] = True
+
+    is_surface = np.zeros(N, dtype=bool)
+    is_surface[surface_nodes] = True
+
+    disp_concat = jnp.concatenate(
+        [
+            jnp.zeros((len(free_nodes) * 3,)),  # flatten free 3D displacements
+            jnp.zeros((len(surface_nodes) * 2,)),  # flatten surface 2D displacements
+        ]
+    )
+
+    n_free = len(free_nodes)
+    free_disp_3d = disp_concat[: n_free * 3].reshape((n_free, 3))
+    surface_disp_uv = disp_concat[n_free * 3 :].reshape((len(surface_nodes), 2))
+
+    disp_full = expand_displacements(free_disp_3d, surface_disp_uv, free_nodes, surface_nodes, T1, T2, points.shape[0])
+
+    new_points = apply_nodal_displacements(points, disp_full)
+
+    new_mesh = meshio.Mesh(points=np.array(new_points), cells=[("hexahedron", np.array(cells))])
+    mesh_out = Path(r"tests/integration/move_rot_mesh.msh")
+    if mesh_out.exists():
+        mesh_out.unlink()
+    new_mesh.write(mesh_out, file_format="gmsh")
 
 
 if __name__ == "__main__":
+    # test_move_mode_surface()
     pytest.main([__file__])

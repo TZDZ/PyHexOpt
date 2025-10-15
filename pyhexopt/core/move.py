@@ -81,3 +81,20 @@ def update_points_from_element_deltas(
     N = points.shape[0]
     nodal_delta = reduce_element_deltas_to_nodal(cells, dnode_coords, N, mode=mode)
     return points + nodal_delta
+
+
+@partial(jax.jit, static_argnames=("N"))
+def uv_to_disp_full(free_uv: jax.Array, T1: jax.Array, T2: jax.Array, movable_idx: jax.Array, N: int):
+    """
+    free_uv: (M,2)
+    T1, T2: (M,3)
+    movable_idx: (M,) int32
+    Returns: disp_full (N,3)
+    """
+    # compute free displacements in xyz
+    # free_uv[:,0] -> shape (M,), broadcast to (M,1)
+    disp_free = free_uv[:, 0:1] * T1 + free_uv[:, 1:2] * T2  # (M,3)
+
+    disp_full = jnp.zeros((N, 3), dtype=disp_free.dtype)
+    disp_full = disp_full.at[movable_idx].set(disp_free)
+    return disp_full

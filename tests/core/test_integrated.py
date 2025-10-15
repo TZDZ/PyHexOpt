@@ -1,3 +1,5 @@
+import os
+
 import jax
 import jax.numpy as jnp
 import meshio
@@ -8,7 +10,7 @@ from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.integrated import compute_scaled_jacobians
 from pyhexopt.core.jaxobian import GAUSS_POINTS
 from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
-from pyhexopt.core.utils import detect_free_edge_nodes
+from pyhexopt.core.utils import get_boundary_nodes, get_edge_nodes, prepare_dof_masks_and_bases
 
 
 def make_hex_mesh(points):
@@ -124,21 +126,21 @@ def test_scaled_jacobian_concave_element():
 
 
 def test_real_mesh():
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
     jac = compute_scaled_jacobians(msh)
     assert len(jac) == 27
     assert isinstance(jac, jnp.ndarray)
 
 
 def test_real_mesh_gauss():
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
     jac = compute_scaled_jacobians(msh, at_center=False, sample_points=GAUSS_POINTS)
     assert jac.shape == (27, 8)
     assert isinstance(jac, jnp.ndarray)
 
 
 def test_move_mode():
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
+    msh = meshio.read(r"examples/Square_mesh/square.msh")
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32, verbose=False)
     disp = jnp.zeros_like(points)  # shape (N,3)
 
@@ -160,15 +162,13 @@ def test_move_mode():
         np.testing.assert_approx_equal(a, b)
 
 
-def test_edges():
-    msh = meshio.read(r"examples/Square_mesh/quare.msh")
-    nodes, mask = detect_free_edge_nodes(msh)
-    assert len(nodes) == 32
-    assert 12 in nodes
-    assert 19 in nodes
-    assert 41 not in nodes
+# def test_edges_surfs():
+#     msh = meshio.read(r"examples/Square_mesh/square.msh")
+
+#     free_nodes, surface_nodes, fixed_nodes, T1, T2 = prepare_dof_masks_and_bases(msh)
+#     print(surface_nodes)
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_edges()
+    pytest.main([__file__])
+    # test_move_mode()

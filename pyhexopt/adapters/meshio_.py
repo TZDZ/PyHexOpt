@@ -72,3 +72,45 @@ def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True)
     cells = jnp.asarray(cells, dtype=jnp.int32)  # <-- FIX HERE
 
     return points, cells
+
+
+def rotate_mesh(mesh: meshio.Mesh, axis: np.ndarray, point: np.ndarray, angle_deg: float) -> meshio.Mesh:
+    """
+    Rotate a meshio Mesh around an arbitrary axis passing through a point.
+
+    Parameters
+    ----------
+    mesh : meshio.Mesh
+        The input mesh to rotate (points, cells, data preserved).
+    axis : (3,) array-like
+        The axis of rotation (need not be normalized).
+    point : (3,) array-like
+        A point on the rotation axis (the rotation center).
+    angle_deg : float
+        The rotation angle in degrees.
+
+    Returns
+    -------
+    rotated_mesh : meshio.Mesh
+        New mesh with rotated points (deep copy).
+
+    """
+    # Normalize axis
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    point = np.asarray(point, dtype=float)
+
+    # Convert to radians
+    theta = np.deg2rad(angle_deg)
+
+    # Rodrigues' rotation matrix
+    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    R = np.eye(3) + np.sin(theta) * K + (1 - np.cos(theta)) * (K @ K)
+
+    # Translate, rotate, translate back
+    pts = np.asarray(mesh.points)
+    rotated_points = (R @ (pts - point).T).T + point
+    cells = mesh.cells_dict["hexahedron"].astype(np.int64)
+    # Return new mesh with same topology and data
+    rotated_mesh = meshio.Mesh(points=rotated_points, cells=[("hexahedron", cells)])
+    return rotated_mesh
