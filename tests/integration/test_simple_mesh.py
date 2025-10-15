@@ -77,6 +77,8 @@ def test_move_mode_surface():
     )
 
     n_free = len(free_nodes)
+    disp_concat.at[: n_free * 3 + 10].set(0.25)
+    disp_concat.at[: n_free * 3 + 11].set(0.25)
     free_disp_3d = disp_concat[: n_free * 3].reshape((n_free, 3))
     surface_disp_uv = disp_concat[n_free * 3 :].reshape((len(surface_nodes), 2))
 
