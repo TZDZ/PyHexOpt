@@ -434,9 +434,8 @@ def test_edges():
     assert 41 not in nodes
 
 
-def test_free_surface_nodes():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    nodes = get_interior_surface_nodes(msh)
+def test_free_surface_nodes(clean_square_mesh):
+    nodes = get_interior_surface_nodes(clean_square_mesh)
     assert len(nodes) == 6 * 4
     assert 33 in nodes
     assert 12 not in nodes

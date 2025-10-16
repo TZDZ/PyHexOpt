@@ -10,9 +10,8 @@ from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objec
 from pyhexopt.core.utils import build_tangent_bases
 
 
-def test_real_mesh():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+def test_real_mesh(clean_square_mesh):
+    points, cells = extract_points_and_cells(clean_square_mesh, dtype=jnp.float32)
     disp = jnp.zeros_like(points)  # shape (N,3)
     N = points.shape[0]
     fixed_indices = jnp.array([0, 3, 4, 7])  # e.g., one face is fixed
@@ -21,9 +20,8 @@ def test_real_mesh():
     assert obj == 0
 
 
-def test_real_mesh_not_optimal():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+def test_real_mesh_not_optimal(clean_square_mesh):
+    points, cells = extract_points_and_cells(clean_square_mesh, dtype=jnp.float32)
     disp = jnp.zeros_like(points)  # shape (N,3)
     disp = disp.at[27].set(jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32))
     N = points.shape[0]
@@ -33,9 +31,8 @@ def test_real_mesh_not_optimal():
     assert obj > 0
 
 
-def test_real_mesh_masked():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+def test_real_mesh_masked(clean_square_mesh):
+    points, cells = extract_points_and_cells(clean_square_mesh, dtype=jnp.float32)
     disp = jnp.zeros_like(points)  # shape (N,3)
     disp = disp.at[27].set(jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32))
     N = points.shape[0]
@@ -46,9 +43,8 @@ def test_real_mesh_masked():
     assert obj > 0
 
 
-def test_real_mesh_masked_grad():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+def test_real_mesh_masked_grad(clean_square_mesh):
+    points, cells = extract_points_and_cells(clean_square_mesh, dtype=jnp.float32)
     disp = jnp.zeros_like(points)  # shape (N,3)
     disp = disp.at[27].set(jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32))
     N = points.shape[0]

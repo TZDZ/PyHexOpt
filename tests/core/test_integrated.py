@@ -1,6 +1,3 @@
-import os
-
-import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
@@ -10,7 +7,6 @@ from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.integrated import compute_scaled_jacobians
 from pyhexopt.core.jaxobian import GAUSS_POINTS
 from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
-from pyhexopt.core.utils import get_boundary_nodes, get_edge_nodes, prepare_dof_masks_and_bases
 
 
 def make_hex_mesh(points):
@@ -125,23 +121,20 @@ def test_scaled_jacobian_concave_element():
     assert np.any(SJ[0] < 0.0)  # still not inverted
 
 
-def test_real_mesh():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    jac = compute_scaled_jacobians(msh)
+def test_real_mesh(clean_square_mesh):
+    jac = compute_scaled_jacobians(clean_square_mesh)
     assert len(jac) == 27
     assert isinstance(jac, jnp.ndarray)
 
 
-def test_real_mesh_gauss():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    jac = compute_scaled_jacobians(msh, at_center=False, sample_points=GAUSS_POINTS)
+def test_real_mesh_gauss(clean_square_mesh):
+    jac = compute_scaled_jacobians(clean_square_mesh, at_center=False, sample_points=GAUSS_POINTS)
     assert jac.shape == (27, 8)
     assert isinstance(jac, jnp.ndarray)
 
 
-def test_move_mode():
-    msh = meshio.read(r"examples/Square_mesh/square.msh")
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32, verbose=False)
+def test_move_mode(clean_square_mesh):
+    points, cells = extract_points_and_cells(clean_square_mesh, dtype=jnp.float32, verbose=False)
     disp = jnp.zeros_like(points)  # shape (N,3)
 
     # Move node 27 by [0.1, 0.2, 0.3]
