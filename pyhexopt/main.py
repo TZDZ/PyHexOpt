@@ -97,8 +97,8 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str):
         tol=1e-6,
     )
 
-    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
-    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
+    volu_disps = final_params[: n_volu * 3].reshape((n_volu, 3))
+    surf_disps = final_params[n_volu * 3 :].reshape((n_surf, 2))
 
     all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
 
