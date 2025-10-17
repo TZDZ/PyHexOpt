@@ -21,7 +21,7 @@ def square_bad1_mesh() -> meshio.Mesh:
 
 @pytest.fixture
 def square_rot_bad1_mesh() -> meshio.Mesh:
-    return meshio.read(Path(r"examples\Square_mesh\square_rot_bad_1.msh"))
+    return meshio.read(Path(r"examples/Square_mesh/square_rot_bad_1.msh"))
 
 
 @pytest.fixture

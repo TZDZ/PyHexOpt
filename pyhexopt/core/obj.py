@@ -25,17 +25,18 @@ def objective_simple(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_
     return jnp.sum((worst_jac - 1.0) ** 2)
 
 
+@partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot"))
 def objective(
-    reduced_disps: ArrayLike,
-    points: ArrayLike,
-    cells: ArrayLike,
+    reduced_disps: jax.Array,
+    points: jax.Array,
+    cells: jax.Array,
     n_volu: int,
     n_surf: int,
     n_tot: int,
-    volumic_nodes,
-    surface_nodes,
-    T1,
-    T2,
+    volumic_nodes: jax.Array,
+    surface_nodes: jax.Array,
+    T1: jax.Array,
+    T2: jax.Array,
 ) -> jax.Array:
     volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
     surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))

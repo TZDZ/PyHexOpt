@@ -65,6 +65,13 @@ def test_end_to_end(clean_square_mesh, square_bad1_mesh, out_path):
     np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
+def test_end_to_end_rot(clean_rot_square_mesh, square_rot_bad1_mesh, out_path):
+    out_mesh_path = out_path / "corrected_simple_rot_mesh.msh"
+    main(square_rot_bad1_mesh, out_mesh_path)
+    corrected_msh = meshio.read(out_mesh_path)
+    np.testing.assert_allclose(clean_rot_square_mesh.points, corrected_msh.points, atol=2e-3)
+
+
 @pytest.mark.parametrize("mesh_name", ["clean_square_mesh", "clean_rot_square_mesh"])
 def test_move_mode_surface(mesh_name, request, out_path):
     mesh_fixture = request.getfixturevalue(mesh_name)
@@ -113,13 +120,5 @@ def test_move_mode_surface(mesh_name, request, out_path):
         np.testing.assert_allclose(orig_pts, new_pts, atol=1e-6)
 
 
-# def test_end_to_end2(clean_rot_square_mesh, square_rot_bad1_mesh, out_path):
-#     out_mesh_path = out_path / "corrected_simple_mesh.msh"
-#     main(square_rot_bad1_mesh, out_mesh_path)
-#     corrected_msh = meshio.read(out_mesh_path)
-#     np.testing.assert_allclose(clean_rot_square_mesh.points, corrected_msh.points, atol=2e-3)
-
-
 if __name__ == "__main__":
-    # test_move_mode_surface()
     pytest.main([__file__])
