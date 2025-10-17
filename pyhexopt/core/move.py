@@ -12,12 +12,11 @@ def nodes_from_points(points: jax.Array, cells: jax.Array) -> jax.Array:
     cells:  (E,8)
     returns node_coords: (E,8,3)
     """
-    # fancy indexing works with JAX
     return points[cells]  # (E,8,3)
 
 
 @jax.jit
-def apply_nodal_displacements(points: jax.Array, disp: jax.Array):
+def apply_nodal_displacements(points: jax.Array, disp: jax.Array) -> jax.Array:
     """Add disp (N,3) to points (N,3), returns new points."""
     return points + disp
 

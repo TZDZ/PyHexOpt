@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -33,45 +35,48 @@ def expand_disp_from_mask(free_disp: ArrayLike, free_mask: ArrayLike) -> jax.Arr
     return full
 
 
-# @jax.jit
+@partial(jax.jit, static_argnames=("N",))
 def expand_displacements(
-    free_disp_3d,
-    surface_disp_uv,
-    free_nodes,
-    surface_nodes,
-    T1: np.ndarray,
-    T2: np.ndarray,
+    free_disp_3d: jax.Array,
+    surface_disp_uv: jax.Array,
+    free_nodes: jax.Array,
+    surface_nodes: jax.Array,
+    T1: jax.Array,
+    T2: jax.Array,
     N: int,
-):
+) -> jax.Array:
     """
-    Reconstruct full (N,3) displacement array using:
-      - free_disp_3d: (F,3) moves for fully-free nodes
-      - surface_disp_uv: (S,2) local u,v moves for surface nodes
-      - free_nodes: array-like (F,) indices
-      - surface_nodes: array-like (S,) indices
-      - T1,T2: (S,3) tangent bases corresponding to surface_nodes
-      - N: total number of nodes
+    JAX-compatible version of expand_displacements.
 
-    This version is numpy-based (callable from tests). For JAX use uv_to_disp_full jitted helper.
+    Args:
+        free_disp_3d: (F,3) displacement vectors for fully-free nodes
+        surface_disp_uv: (S,2) local UV displacements for surface nodes
+        free_nodes: (F,) indices of fully-free nodes
+        surface_nodes: (S,) indices of surface nodes
+        T1, T2: (S,3) tangent bases for surface nodes
+        N: total number of nodes
+
+    Returns:
+        disp_full: (N,3) displacement field for all nodes
     """
-    free_nodes = np.asarray(free_nodes, dtype=int)
-    surface_nodes = np.asarray(surface_nodes, dtype=int)
-    free_disp_3d = np.asarray(free_disp_3d, dtype=float)
-    surface_disp_uv = np.asarray(surface_disp_uv, dtype=float)
-    T1 = np.asarray(T1, dtype=float)
-    T2 = np.asarray(T2, dtype=float)
 
-    disp_full = np.zeros((N, 3), dtype=float)
+    # ensure JAX arrays (safe if already are)
+    free_nodes = jnp.asarray(free_nodes, dtype=jnp.int32)
+    surface_nodes = jnp.asarray(surface_nodes, dtype=jnp.int32)
+    free_disp_3d = jnp.asarray(free_disp_3d, dtype=jnp.float32)
+    surface_disp_uv = jnp.asarray(surface_disp_uv, dtype=jnp.float32)
+    T1 = jnp.asarray(T1, dtype=jnp.float32)
+    T2 = jnp.asarray(T2, dtype=jnp.float32)
 
-    if free_nodes.size > 0:
-        assert free_disp_3d.shape[0] == free_nodes.shape[0]
-        disp_full[free_nodes] = free_disp_3d
+    disp_full = jnp.zeros((N, 3), dtype=jnp.float32)
 
+    # Scatter free node displacements
+    disp_full = disp_full.at[free_nodes].set(free_disp_3d)
+
+    # Compute and scatter surface node displacements (local UV → XYZ)
     if surface_nodes.size > 0:
-        assert surface_disp_uv.shape[0] == surface_nodes.shape[0]
-        # convert uv -> xyz for surface nodes
         disp_surface = surface_disp_uv[:, 0:1] * T1 + surface_disp_uv[:, 1:2] * T2
-        disp_full[surface_nodes] = disp_surface
+        disp_full = disp_full.at[surface_nodes].set(disp_surface)
 
     return disp_full
 

@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+import jax.numpy as jnp
 import meshio
 import numpy as np
 
@@ -356,13 +357,18 @@ def prepare_dof_masks_and_bases(mesh):
     surface_nodes = get_interior_surface_nodes(mesh)
 
     points, _ = extract_points_and_cells(mesh)
-    # interior = all - boundary
+    # interior => all - boundary
     all_nodes = np.arange(points.shape[0])
-    free_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
+    volumic_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
 
     faces = get_boundary_faces(mesh)  # you need this helper
     normals = compute_node_normals_from_faces(points, faces)
 
     T1, T2 = build_tangent_bases(points, normals, surface_nodes)
 
-    return free_nodes, surface_nodes, edge_nodes, T1, T2
+    edge_nodes = jnp.array(edge_nodes, dtype=jnp.int32)
+    surface_nodes = jnp.array(surface_nodes, dtype=jnp.int32)
+    volumic_nodes = jnp.array(volumic_nodes, dtype=jnp.int32)
+    T1 = jnp.array(T1, dtype=jnp.float32)
+    T2 = jnp.array(T2, dtype=jnp.float32)
+    return volumic_nodes, surface_nodes, edge_nodes, T1, T2

@@ -57,39 +57,52 @@ def test_end_to_end(clean_square_mesh, square_bad1_mesh_path, out_path):
     np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
-def test_move_mode_surface(clean_square_mesh, out_path):
-    mesh_in = clean_square_mesh
-    points, cells = extract_points_and_cells(mesh_in, dtype=jnp.float32)
-    free_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(mesh_in)
+@pytest.mark.parametrize("mesh_name", ["clean_square_mesh", "clean_rot_square_mesh"])
+def test_move_mode_surface(mesh_name, request, out_path):
+    mesh_fixture = request.getfixturevalue(mesh_name)
+    points, cells = extract_points_and_cells(mesh_fixture, dtype=jnp.float32)
+    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(mesh_fixture)
 
-    N = points.shape[0]
-    is_free = np.zeros(N, dtype=bool)
-    is_free[free_nodes] = True
+    n_tot = points.shape[0]
+    is_free = np.zeros(n_tot, dtype=bool)
+    is_free[volumic_nodes] = True
 
-    is_surface = np.zeros(N, dtype=bool)
+    is_surface = np.zeros(n_tot, dtype=bool)
     is_surface[surface_nodes] = True
 
-    disp_concat = jnp.concatenate(
+    n_volu = len(volumic_nodes)
+    n_surf = len(surface_nodes)
+    reduced_disps = jnp.concatenate(
         [
-            jnp.zeros((len(free_nodes) * 3,)),  # flatten free 3D displacements
+            jnp.zeros((n_volu * 3,)),  # flatten free 3D displacements
             jnp.zeros((len(surface_nodes) * 2,)),  # flatten surface 2D displacements
         ]
     )
 
-    n_free = len(free_nodes)
-    disp_concat = disp_concat.at[: n_free * 3 + 10].set(0.25)
-    free_disp_3d = disp_concat[: n_free * 3].reshape((n_free, 3))
-    surface_disp_uv = disp_concat[n_free * 3 :].reshape((len(surface_nodes), 2))
+    reduced_disps = reduced_disps.at[n_volu * 3 + 10].set(0.25)
 
-    disp_full = expand_displacements(free_disp_3d, surface_disp_uv, free_nodes, surface_nodes, T1, T2, points.shape[0])
+    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
+    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
 
-    new_points = apply_nodal_displacements(points, disp_full)
+    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
+
+    new_points = apply_nodal_displacements(points, all_disps)
 
     new_mesh = meshio.Mesh(points=np.array(new_points), cells=[("hexahedron", np.array(cells))])
-    mesh_out = out_path / "surf_move_clean_square_mesh.msh"
+    mesh_out = out_path / f"surf_move_{mesh_name}.msh"
     if mesh_out.exists():
         mesh_out.unlink()
     new_mesh.write(mesh_out, file_format="gmsh")
+    moved_mesh = meshio.read(mesh_out)
+
+    orig_pts = np.array(mesh_fixture.points)
+    new_pts = np.array(moved_mesh.points)
+    diff = np.linalg.norm(new_pts - orig_pts, axis=1)
+    moved_mask = diff > 1e-6  # tolerance for floating-point noise
+    moved_indices = np.nonzero(moved_mask)[0]
+    assert len(moved_indices) == 1
+    with np.testing.assert_raises(AssertionError):
+        np.testing.assert_allclose(orig_pts, new_pts, atol=1e-6)
 
 
 if __name__ == "__main__":
