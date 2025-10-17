@@ -155,13 +155,6 @@ def test_move_mode(clean_square_mesh):
         np.testing.assert_approx_equal(a, b)
 
 
-# def test_edges_surfs():
-#     msh = meshio.read(r"examples/Square_mesh/square.msh")
-
-#     free_nodes, surface_nodes, fixed_nodes, T1, T2 = prepare_dof_masks_and_bases(msh)
-#     print(surface_nodes)
-
-
 if __name__ == "__main__":
     pytest.main([__file__])
     # test_move_mode()

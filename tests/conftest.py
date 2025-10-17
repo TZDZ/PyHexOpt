@@ -25,6 +25,16 @@ def square_rot_bad1_mesh() -> meshio.Mesh:
 
 
 @pytest.fixture
+def square_rot_bad2_mesh() -> meshio.Mesh:
+    return meshio.read(Path(r"examples/Square_mesh/square_rot_bad_2.msh"))
+
+
+@pytest.fixture
+def square_rot_bad3_mesh() -> meshio.Mesh:
+    return meshio.read(Path(r"examples/Square_mesh/square_rot_bad_3.msh"))
+
+
+@pytest.fixture
 def out_path() -> Path:
     out = Path(r"tests/out")
     if out.exists() is False:
