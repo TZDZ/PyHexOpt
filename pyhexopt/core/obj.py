@@ -6,7 +6,7 @@ import numpy as np
 from jax.typing import ArrayLike
 
 from pyhexopt.core.jaxobian import GAUSS_POINTS, compute_scaled_jacobians_from_coords
-from pyhexopt.core.move import nodes_from_points, uv_to_disp_full
+from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points, uv_to_disp_full
 
 
 def apply_masked_displacement(points: ArrayLike, disp: ArrayLike, free_mask: ArrayLike) -> jax.Array:
@@ -15,11 +15,35 @@ def apply_masked_displacement(points: ArrayLike, disp: ArrayLike, free_mask: Arr
     return points + disp * mask
 
 
-def objective(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_mask: ArrayLike) -> jax.Array:
+def objective_simple(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_mask: ArrayLike) -> jax.Array:
     """Example: minimize average deviation of Jacobian determinant from 1."""
     moved_points = apply_masked_displacement(points, disp, free_mask)
     node_coords = nodes_from_points(moved_points, cells)
 
+    jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
+    worst_jac = jnp.min(jac, axis=1)
+    return jnp.sum((worst_jac - 1.0) ** 2)
+
+
+def objective(
+    reduced_disps: ArrayLike,
+    points: ArrayLike,
+    cells: ArrayLike,
+    n_volu: int,
+    n_surf: int,
+    n_tot: int,
+    volumic_nodes,
+    surface_nodes,
+    T1,
+    T2,
+) -> jax.Array:
+    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
+    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
+
+    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
+
+    moved_points = apply_nodal_displacements(points, all_disps)
+    node_coords = nodes_from_points(moved_points, cells)
     jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
     worst_jac = jnp.min(jac, axis=1)
     return jnp.sum((worst_jac - 1.0) ** 2)
@@ -125,21 +149,6 @@ def objective_free(
     )  # (E, 8)
 
     # Example objective: penalize deviation of smallest jacobian from 1
-    min_jac = jnp.min(jac, axis=1)
-    return jnp.sum((min_jac - 1.0) ** 2)
-
-
-# Example objective that mirrors your objective_free but uses free_uv (M,2)
-@jax.jit
-def objective_uv(free_uv, points, cells, T1, T2, movable_idx):
-    N = points.shape[0]
-    disp_full = uv_to_disp_full(free_uv, T1, T2, movable_idx, N)
-    moved_points = points + disp_full
-
-    # per-element coordinates (keep nodes_from_points and jac fns JAX-friendly)
-    node_coords = nodes_from_points(moved_points, cells)
-
-    jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
     min_jac = jnp.min(jac, axis=1)
     return jnp.sum((min_jac - 1.0) ** 2)
 
