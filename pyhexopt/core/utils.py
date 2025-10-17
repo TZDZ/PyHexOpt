@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
@@ -335,7 +336,7 @@ def get_interior_surface_nodes(mesh):
     return surface_nodes
 
 
-def prepare_dof_masks_and_bases(mesh):
+def prepare_dof_masks_and_bases(mesh) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Split nodes into fixed, surface (2 ddl), and free (3 ddl).
 

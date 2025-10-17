@@ -14,9 +14,12 @@ from pyhexopt.core.optim import run_opt
 from pyhexopt.core.utils import get_boundary_nodes, get_edge_nodes, prepare_dof_masks_and_bases
 
 
-def main(mesh_in: str, mesh_out: str):
+def main(mesh_in: str | meshio.Mesh, mesh_out: str):
     ### Lecture du maillage
-    msh = meshio.read(mesh_in)
+    if isinstance(mesh_in, str):
+        msh = meshio.read(mesh_in)
+    else:
+        msh = mesh_in
     ### préproc
     boundary = get_boundary_nodes(msh)
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)

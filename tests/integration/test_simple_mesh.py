@@ -51,9 +51,10 @@ def test_real_mesh_masked_grad(clean_square_mesh, out_path: Path):
     np.testing.assert_allclose(np.array(msh.points[moving_node]), move + initpos)
 
 
-def test_end_to_end(clean_square_mesh, square_bad1_mesh_path, out_path):
-    main(square_bad1_mesh_path, out_path / "corrected_simple_mesh.msh")
-    corrected_msh = meshio.read(out_path / "corrected_simple_mesh.msh")
+def test_end_to_end(clean_square_mesh, square_bad1_mesh, out_path):
+    out_mesh_path = out_path / "corrected_simple_mesh.msh"
+    main(square_bad1_mesh, out_mesh_path)
+    corrected_msh = meshio.read(out_mesh_path)
     np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
@@ -103,6 +104,13 @@ def test_move_mode_surface(mesh_name, request, out_path):
     assert len(moved_indices) == 1
     with np.testing.assert_raises(AssertionError):
         np.testing.assert_allclose(orig_pts, new_pts, atol=1e-6)
+
+
+# def test_end_to_end2(clean_rot_square_mesh, square_rot_bad1_mesh, out_path):
+#     out_mesh_path = out_path / "corrected_simple_mesh.msh"
+#     main(square_rot_bad1_mesh, out_mesh_path)
+#     corrected_msh = meshio.read(out_mesh_path)
+#     np.testing.assert_allclose(clean_rot_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
 if __name__ == "__main__":
