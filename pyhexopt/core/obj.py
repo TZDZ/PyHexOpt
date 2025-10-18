@@ -26,7 +26,7 @@ def objective_simple(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_
 
 
 @partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot"))
-def objective(
+def objective(  # noqa: PLR0913
     reduced_disps: jax.Array,
     points: jax.Array,
     cells: jax.Array,

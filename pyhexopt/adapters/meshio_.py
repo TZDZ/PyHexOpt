@@ -69,7 +69,7 @@ def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True)
 
     # ensure correct dtype conversions
     points = jnp.asarray(points, dtype=dtype)
-    cells = jnp.asarray(cells, dtype=jnp.int32)  # <-- FIX HERE
+    cells = jnp.asarray(cells, dtype=jnp.int32)
 
     return points, cells
 
