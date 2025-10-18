@@ -2,6 +2,7 @@ import meshio
 import numpy as np
 import pytest
 
+from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.utils import (
     build_tangent_bases,
     compute_node_normals_from_faces,
@@ -28,11 +29,9 @@ def test_single_hex_boundary_nodes():
     )
 
     # One hexahedron cell using these 8 points
-    cells = [("hexahedron", np.array([[0, 1, 2, 3, 4, 5, 6, 7]]))]
+    cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
 
-    mesh = meshio.Mesh(points=points, cells=cells)
-
-    boundary_nodes = get_boundary_nodes(mesh)
+    boundary_nodes = get_boundary_nodes(points, cells)
 
     # For a single hex, all 8 nodes are boundary nodes
     expected = np.arange(8)
@@ -58,20 +57,14 @@ def test_two_adjacent_hexes_shared_face():
         ]
     )
 
-    cells = [
-        (
-            "hexahedron",
-            np.array(
-                [
-                    [0, 1, 2, 3, 4, 5, 6, 7],  # left cube
-                    [1, 8, 9, 2, 5, 10, 11, 6],  # right cube
-                ]
-            ),
-        )
-    ]
+    cells = np.array(
+        [
+            [0, 1, 2, 3, 4, 5, 6, 7],  # left cube
+            [1, 8, 9, 2, 5, 10, 11, 6],  # right cube
+        ]
+    )
 
-    mesh = meshio.Mesh(points=points, cells=cells)
-    boundary_nodes = get_boundary_nodes(mesh)
+    boundary_nodes = get_boundary_nodes(points, cells)
     expected = np.arange(12)
 
     assert set(boundary_nodes) == set(expected)
@@ -79,7 +72,8 @@ def test_two_adjacent_hexes_shared_face():
 
 def test_3x3():
     msh = meshio.read(r"examples/Square_mesh/square.msh")
-    bnd_nodes = get_boundary_nodes(msh)
+    points, cells = extract_points_and_cells(msh)
+    bnd_nodes = get_boundary_nodes(points, cells)
     assert len(bnd_nodes) == 56
     for n in (59, 60, 63, 64, 61, 62, 57, 58):
         assert n not in bnd_nodes
@@ -186,10 +180,10 @@ def testface_normal_invariant_to_translation():
     assert np.allclose(n1, n2, atol=1e-8)
 
 
-def _make_unit_cube_hex_mesh():
+def test_no_boundary_faces_internal_mesh():
     """
-    Construct a minimal single-hex mesh (8 vertices, 1 hexahedron)
-    shaped as a unit cube [0,1]^3.
+    A closed single cube should have boundary faces, but all edges are free edges
+    (since all boundary faces meet at sharp 90°).
     """
     points = np.array(
         [
@@ -203,51 +197,11 @@ def _make_unit_cube_hex_mesh():
             [0, 1, 1],
         ]
     )
-    cells = [("hexahedron", np.array([[0, 1, 2, 3, 4, 5, 6, 7]]))]
-    mesh = meshio.Mesh(points, cells)
-    return mesh
-
-
-def _make_two_cubes_sharing_face():
-    """
-    Two unit cubes stacked along X-axis, sharing one face.
-    Only the outer boundary edges should be 'free'.
-    """
-    pts = np.array(
-        [
-            # left cube
-            [0, 0, 0],  # 0
-            [1, 0, 0],  # 1 shared
-            [1, 1, 0],  # 2 shared
-            [0, 1, 0],  # 3
-            [0, 0, 1],  # 4
-            [1, 0, 1],  # 5 shared
-            [1, 1, 1],  # 6 shared
-            [0, 1, 1],  # 7
-            # right cube (offset +1 in x)
-            [2, 0, 0],  # 8
-            [2, 1, 0],  # 9
-            [2, 0, 1],  # 10
-            [2, 1, 1],  # 11
-        ]
-    )
-    hex1 = [0, 1, 2, 3, 4, 5, 6, 7]
-    hex2 = [1, 8, 9, 2, 5, 10, 11, 6]
-    cells = [("hexahedron", np.array([hex1, hex2]))]
-    mesh = meshio.Mesh(pts, cells)
-    return mesh
-
-
-def test_no_boundary_faces_internal_mesh():
-    """
-    A closed single cube should have boundary faces, but all edges are free edges
-    (since all boundary faces meet at sharp 90°).
-    """
-    mesh = _make_unit_cube_hex_mesh()
-    edge_nodes, edge_mask = get_edge_nodes(mesh, angle_deg=45.0)
+    cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+    edge_nodes, edge_mask = get_edge_nodes(points, cells, angle_deg=45.0)
 
     # All boundary nodes are cube corners
-    boundary_nodes = get_boundary_nodes(mesh)
+    boundary_nodes = get_boundary_nodes(points, cells)
     # All 8 should be boundary and free-edge
     assert len(boundary_nodes) == 8
     assert np.all(edge_mask[boundary_nodes])
@@ -260,7 +214,7 @@ def test_angle_threshold_controls_detection():
     and ensure angle threshold controls detection.
     """
     # Build two quads sharing an edge with small dihedral angle (~5°)
-    pts = np.array(
+    points = np.array(
         [
             [0, 0, 0],  # 0
             [1, 0, 0],  # 1
@@ -273,13 +227,12 @@ def test_angle_threshold_controls_detection():
         ]
     )
     # Two slightly offset cubes to form nearly-flat interface
-    hex1 = [0, 1, 2, 3, 4, 5, 6, 7]
-    mesh = meshio.Mesh(pts, [("hexahedron", np.array([hex1]))])
+    cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
 
     # small threshold → still consider flat faces connected
-    _, mask_loose = get_edge_nodes(mesh, angle_deg=1.0)
+    _, mask_loose = get_edge_nodes(points, cells, angle_deg=1.0)
     # tight threshold → classify edges as sharp
-    _, mask_strict = get_edge_nodes(mesh, angle_deg=89.0)
+    _, mask_strict = get_edge_nodes(points, cells, angle_deg=89.0)
 
     num_loose = mask_loose.sum()
     num_strict = mask_strict.sum()
@@ -288,13 +241,25 @@ def test_angle_threshold_controls_detection():
 
 
 def test_return_types_and_shapes():
-    mesh = _make_unit_cube_hex_mesh()
-    edge_nodes, edge_mask = get_edge_nodes(mesh, angle_deg=45.0)
+    points = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ]
+    )
+    cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+    edge_nodes, edge_mask = get_edge_nodes(points, cells, angle_deg=45.0)
     assert isinstance(edge_nodes, np.ndarray)
     assert edge_mask.dtype == bool
-    assert edge_mask.shape[0] == mesh.points.shape[0]
+    assert edge_mask.shape[0] == points.shape[0]
     # indices are valid
-    assert np.all((edge_nodes >= 0) & (edge_nodes < mesh.points.shape[0]))
+    assert np.all((edge_nodes >= 0) & (edge_nodes < points.shape[0]))
 
 
 def test_compute_node_normals_simple_plane():
@@ -427,7 +392,8 @@ def test_small_random_normals_stability():
 
 def test_edges():
     msh = meshio.read(r"examples/Square_mesh/square.msh")
-    nodes, mask = get_edge_nodes(msh)
+    points, cells = extract_points_and_cells(msh)
+    nodes, mask = get_edge_nodes(points, cells)
     assert len(nodes) == 32
     assert 12 in nodes
     assert 19 in nodes
@@ -435,7 +401,8 @@ def test_edges():
 
 
 def test_free_surface_nodes(clean_square_mesh):
-    nodes = get_interior_surface_nodes(clean_square_mesh)
+    points, cells = extract_points_and_cells(clean_square_mesh)
+    nodes = get_interior_surface_nodes(points, cells)
     assert len(nodes) == 6 * 4
     assert 33 in nodes
     assert 12 not in nodes

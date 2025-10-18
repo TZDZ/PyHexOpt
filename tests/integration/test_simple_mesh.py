@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import jax
@@ -24,8 +23,8 @@ def test_real_mesh_masked_grad(clean_square_mesh, out_path: Path):
     initpos = np.array(msh.points[moving_node])
 
     ### préproc
-    boundary = get_boundary_nodes(msh)
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+    boundary = get_boundary_nodes(points, cells)
     disp = jnp.zeros_like(points)  # shape (N,3)
     disp = disp.at[moving_node].set(jnp.array(move, dtype=jnp.float32))
     fixed_indices = jnp.array(boundary)  # e.g., one face is fixed
@@ -78,7 +77,7 @@ def test_end_to_end_rot(clean_rot_square_mesh, mesh_name, out_path, request):
 def test_move_mode_surface(mesh_name, request, out_path):
     mesh_fixture = request.getfixturevalue(mesh_name)
     points, cells = extract_points_and_cells(mesh_fixture, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(mesh_fixture)
+    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
 
     n_tot = points.shape[0]
     is_free = np.zeros(n_tot, dtype=bool)
@@ -126,7 +125,7 @@ def test_move_mode_surface(mesh_name, request, out_path):
 def test_surface_displacement_affects_only_surface_nodes(mesh_name, request, out_path):
     mesh_fixture = request.getfixturevalue(mesh_name)
     points, cells = extract_points_and_cells(mesh_fixture, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(mesh_fixture)
+    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
 
     n_tot = points.shape[0]
     n_volu = len(volumic_nodes)

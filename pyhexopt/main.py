@@ -21,8 +21,8 @@ def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
     else:
         msh = mesh_in
     ### préproc
-    boundary = get_boundary_nodes(msh)
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+    boundary = get_boundary_nodes(points, cells)
     disp = jnp.zeros_like(points)  # shape (N,3)
     fixed_indices = jnp.array(boundary)  # e.g., one face is fixed
     free_mask = jnp.ones((points.shape[0],), dtype=bool).at[fixed_indices].set(False)
@@ -58,7 +58,7 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str):
     else:
         msh = mesh_in
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(msh)
+    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
 
     n_tot = points.shape[0]
     is_free = np.zeros(n_tot, dtype=bool)

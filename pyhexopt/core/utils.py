@@ -2,10 +2,7 @@ from collections import defaultdict
 
 import jax
 import jax.numpy as jnp
-import meshio
 import numpy as np
-
-from pyhexopt.adapters.meshio_ import extract_points_and_cells
 
 _EPS = 1e-12
 
@@ -47,19 +44,14 @@ def _hex_faces_ordered_from_cell(cell: np.ndarray) -> list[tuple[int, ...]]:
     return faces
 
 
-def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
+def get_boundary_nodes(points, cells) -> np.ndarray:
     """
     Return sorted numpy array of node indices that belong to the boundary.
     Works robustly by using canonical integer keys for faces.
     """
-    # handle case where mesh may have multiple cell blocks
-    if "hexahedron" not in mesh.cells_dict:
-        msg = "Mesh does not contain hexahedra."
-        raise ValueError(msg)
-
     face_count = defaultdict(lambda: 0)
 
-    for cell in mesh.cells_dict["hexahedron"]:
+    for cell in cells:
         for face_key in _hex_face_keys_from_cell(cell):
             face_count[face_key] += 1
 
@@ -72,21 +64,19 @@ def get_boundary_nodes(mesh: meshio.Mesh) -> np.ndarray:
     return np.array(sorted(boundary_nodes), dtype=int)
 
 
-def get_boundary_faces(mesh) -> list[tuple[int, ...]]:
+def get_boundary_faces(points, cells) -> list[tuple[int, ...]]:
     """
     Return ordered boundary faces (as tuples of node indices).
     A face is considered boundary if it appears exactly once across all cells.
     Ordering is preserved from the parent cell's ordering so normals can be computed.
     """
-    # collect face counts and last ordered face seen
     face_count = {}
-    for cell in mesh.cells_dict.get("hexahedron", mesh.cells_dict.get("hex", [])):
+    for cell in cells:
         for face in _hex_faces_ordered_from_cell(cell):
             key = frozenset(face)
             if key in face_count:
                 face_count[key][0] += 1
             else:
-                # store [count, ordered_tuple]
                 face_count[key] = [1, tuple(face)]
 
     # keep only faces occurring once
@@ -200,18 +190,18 @@ def detect_edge_mask_from_face_normals(
     return edge_mask
 
 
-def get_edge_nodes(mesh, angle_deg: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
+def get_edge_nodes(points, cells, angle_deg: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
     """
     Top-level function: returns (edge_nodes_array, edge_mask_bool_array).
     Composed of the smaller functions above, easy to unit-test each piece.
     """
     # 1) boundary faces only
-    boundary_faces = get_boundary_faces(mesh)
+    boundary_faces = get_boundary_faces(points, cells)
     if len(boundary_faces) == 0:
-        N = int(np.asarray(mesh.points).shape[0])
+        N = int(np.asarray(points).shape[0])
         return np.array([], dtype=int), np.zeros((N,), dtype=bool)
 
-    points = np.asarray(mesh.points, dtype=float)
+    # points = np.asarray(mesh.points, dtype=float)
     # 2) compute normals for boundary faces
     face_normals = compute_face_normals(points, boundary_faces)
     # 3) detect edge mask from face normals
@@ -329,14 +319,14 @@ def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_in
     return T1, T2
 
 
-def get_interior_surface_nodes(mesh):
-    boundary_nodes = get_boundary_nodes(mesh)
-    edge_nodes, _ = get_edge_nodes(mesh)
+def get_interior_surface_nodes(points, cells):
+    boundary_nodes = get_boundary_nodes(points, cells)
+    edge_nodes, _ = get_edge_nodes(points, cells)
     surface_nodes = np.setdiff1d(boundary_nodes, edge_nodes, assume_unique=True)
     return surface_nodes
 
 
-def prepare_dof_masks_and_bases(mesh) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+def prepare_dof_masks_and_bases(points, cells) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Split nodes into fixed, surface (2 ddl), and free (3 ddl).
 
@@ -352,17 +342,16 @@ def prepare_dof_masks_and_bases(mesh) -> tuple[jax.Array, jax.Array, jax.Array, 
         Tangent bases for surface nodes.
 
     """
-    boundary_nodes = get_boundary_nodes(mesh)
-    edge_nodes, _ = get_edge_nodes(mesh)
+    boundary_nodes = get_boundary_nodes(points, cells)
+    edge_nodes, _ = get_edge_nodes(points, cells)
 
-    surface_nodes = get_interior_surface_nodes(mesh)
+    surface_nodes = get_interior_surface_nodes(points, cells)
 
-    points, _ = extract_points_and_cells(mesh)
     # interior => all - boundary
     all_nodes = np.arange(points.shape[0])
     volumic_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
 
-    faces = get_boundary_faces(mesh)  # you need this helper
+    faces = get_boundary_faces(points, cells)  # you need this helper
     normals = compute_node_normals_from_faces(points, faces)
 
     T1, T2 = build_tangent_bases(points, normals, surface_nodes)
