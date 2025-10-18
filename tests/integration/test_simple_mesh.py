@@ -6,6 +6,7 @@ import meshio
 import numpy as np
 import pytest
 
+from pyhexopt.adapters.example_creator import cube_gen, randomize_nodes
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_free
@@ -77,30 +78,23 @@ def test_end_to_end_rot(clean_rot_square_mesh, mesh_name, out_path, request):
 def test_move_mode_surface(mesh_name, request, out_path):
     mesh_fixture = request.getfixturevalue(mesh_name)
     points, cells = extract_points_and_cells(mesh_fixture, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
+    dof = prepare_dof_masks_and_bases(points, cells)
 
-    n_tot = points.shape[0]
-    is_free = np.zeros(n_tot, dtype=bool)
-    is_free[volumic_nodes] = True
-
-    is_surface = np.zeros(n_tot, dtype=bool)
-    is_surface[surface_nodes] = True
-
-    n_volu = len(volumic_nodes)
-    n_surf = len(surface_nodes)
     reduced_disps = jnp.concatenate(
         [
-            jnp.zeros((n_volu * 3,)),  # flatten free 3D displacements
-            jnp.zeros((len(surface_nodes) * 2,)),  # flatten surface 2D displacements
+            jnp.zeros((dof.n_volu * 3,)),  # flatten free 3D displacements
+            jnp.zeros((dof.n_surf * 2,)),  # flatten surface 2D displacements
         ]
     )
 
-    reduced_disps = reduced_disps.at[n_volu * 3 + 10].set(0.25)
+    reduced_disps = reduced_disps.at[dof.n_volu * 3 + 10].set(0.25)
 
-    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
-    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
+    volu_disps = reduced_disps[: dof.n_volu * 3].reshape((dof.n_volu, 3))
+    surf_disps = reduced_disps[dof.n_volu * 3 :].reshape((dof.n_surf, 2))
 
-    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
+    all_disps = expand_displacements(
+        volu_disps, surf_disps, dof.volumic_nodes, dof.surface_nodes, dof.T1, dof.T2, dof.n_tot
+    )
 
     new_points = apply_nodal_displacements(points, all_disps)
 
@@ -125,30 +119,28 @@ def test_move_mode_surface(mesh_name, request, out_path):
 def test_surface_displacement_affects_only_surface_nodes(mesh_name, request, out_path):
     mesh_fixture = request.getfixturevalue(mesh_name)
     points, cells = extract_points_and_cells(mesh_fixture, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
-
-    n_tot = points.shape[0]
-    n_volu = len(volumic_nodes)
-    n_surf = len(surface_nodes)
+    dof = prepare_dof_masks_and_bases(points, cells)
 
     # Initialize reduced displacements (all zeros)
     reduced_disps = jnp.concatenate(
         [
-            jnp.zeros((n_volu * 3,)),  # free volumic displacements (x,y,z)
-            jnp.zeros((n_surf * 2,)),  # surface displacements (u,v)
+            jnp.zeros((dof.n_volu * 3,)),  # free volumic displacements (x,y,z)
+            jnp.zeros((dof.n_surf * 2,)),  # surface displacements (u,v)
         ]
     )
 
     # --- Apply a surface displacement modification ---
     # For example: add some displacement in u-direction of surface node 5
-    surface_disp_index = n_volu * 3 + 5 * 2  # u-component of 6th surface node
+    surface_disp_index = dof.n_volu * 3 + 5 * 2  # u-component of 6th surface node
     reduced_disps = reduced_disps.at[surface_disp_index].set(0.3)
 
     # --- Expand displacements into full 3D displacements ---
-    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
-    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
+    volu_disps = reduced_disps[: dof.n_volu * 3].reshape((dof.n_volu, 3))
+    surf_disps = reduced_disps[dof.n_volu * 3 :].reshape((dof.n_surf, 2))
 
-    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
+    all_disps = expand_displacements(
+        volu_disps, surf_disps, dof.volumic_nodes, dof.surface_nodes, dof.T1, dof.T2, dof.n_tot
+    )
 
     # --- Apply displacements ---
     moved_points = apply_nodal_displacements(points, all_disps)
@@ -165,12 +157,12 @@ def test_surface_displacement_affects_only_surface_nodes(mesh_name, request, out
     moved_indices = np.nonzero(moved_mask)[0]
 
     # (1) All moved indices are a subset of surface nodes
-    assert set(moved_indices).issubset(set(np.array(surface_nodes)))
+    assert set(moved_indices).issubset(set(np.array(dof.surface_nodes)))
 
     # (2) Volumic nodes remained fixed
     assert np.allclose(
-        new_pts[np.array(volumic_nodes)],
-        orig_pts[np.array(volumic_nodes)],
+        new_pts[np.array(dof.volumic_nodes)],
+        orig_pts[np.array(dof.volumic_nodes)],
         atol=tol,
     )
 
@@ -185,5 +177,16 @@ def test_surface_displacement_affects_only_surface_nodes(mesh_name, request, out
     new_mesh.write(mesh_out, file_format="gmsh")
 
 
+@pytest.mark.slow
+def test_heavy():
+    ref_mesh = Path("private/big_cube.msh")
+    bad_mesh = Path("private/big_cube_rand.msh")
+    out_mesh = Path("private/big_cube_rand_cured.msh")
+    cube_gen(ref_mesh, disc=(6, 6, 6))
+    randomize_nodes(ref_mesh, bad_mesh, delta=0.1)
+    main(mesh_in=bad_mesh, mesh_out=out_mesh)
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    test_heavy()

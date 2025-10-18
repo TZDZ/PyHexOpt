@@ -1,11 +1,14 @@
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
 
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
+from pyhexopt.core.obj import expand_displacements
+from pyhexopt.core.utils import prepare_dof_masks_and_bases
 
 
 def move_modes(mesh_in, mesh_out_name):
@@ -44,6 +47,39 @@ def cube_gen(out_file: Path, disc: tuple[int, int, int] = (4, 4, 4)):
     gmsh.finalize()
 
 
+def randomize_nodes(mesh_in: Path, mesh_out: Path, delta: float = 0.1):
+    mesh = meshio.read(mesh_in)
+    points, cells = extract_points_and_cells(mesh, dtype=jnp.float32)
+    dof = prepare_dof_masks_and_bases(points, cells)
+    key = jax.random.PRNGKey(42)
+    reduced_disps = jnp.concatenate(
+        [
+            jax.random.uniform(key, (dof.n_volu * 3,), minval=-delta, maxval=delta),
+            jax.random.uniform(jax.random.split(key)[1], (dof.n_surf * 2,), minval=-delta, maxval=delta),
+        ]
+    )
+    volu_disps = reduced_disps[: dof.n_volu * 3].reshape((dof.n_volu, 3))
+    surf_disps = reduced_disps[dof.n_volu * 3 :].reshape((dof.n_surf, 2))
+
+    all_disps = expand_displacements(
+        volu_disps,
+        surf_disps,
+        dof.volumic_nodes,
+        dof.surface_nodes,
+        dof.T1,
+        dof.T2,
+        dof.n_tot,
+    )
+
+    moved_points = apply_nodal_displacements(points, all_disps)
+
+    new_mesh = meshio.Mesh(points=np.array(moved_points), cells=[("hexahedron", np.array(cells))])
+    if mesh_out.exists():
+        mesh_out.unlink()
+    new_mesh.write(str(mesh_out), file_format="gmsh")
+
+
 if __name__ == "__main__":
     cube_gen(Path("private/big_cube.msh"))
+    randomize_nodes(Path("private/big_cube.msh"), Path("private/big_cube_rand.msh"))
     # move_modes(Path(r"examples/Square_mesh/square_rot.msh"), "square_rot_bad_3.msh")

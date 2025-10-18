@@ -1,17 +1,16 @@
 import os
 from functools import partial
+from pathlib import Path
 
-import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
-import pytest
 
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
-from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
+from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective, objective_free
 from pyhexopt.core.optim import run_opt
-from pyhexopt.core.utils import get_boundary_nodes, get_edge_nodes, prepare_dof_masks_and_bases
+from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
 
 
 def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
@@ -52,27 +51,19 @@ def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
 
 
 def main(mesh_in: str | meshio.Mesh, mesh_out: str):
-    ### Lecture du maillage
-    if isinstance(mesh_in, str):
+    # --- read mesh ---
+    if isinstance(mesh_in, str | Path):
         msh = meshio.read(mesh_in)
     else:
         msh = mesh_in
+
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
-    volumic_nodes, surface_nodes, edge_nodes, T1, T2 = prepare_dof_masks_and_bases(points, cells)
+    dof = prepare_dof_masks_and_bases(points, cells)
 
-    n_tot = points.shape[0]
-    is_free = np.zeros(n_tot, dtype=bool)
-    is_free[volumic_nodes] = True
-
-    is_surface = np.zeros(n_tot, dtype=bool)
-    is_surface[surface_nodes] = True
-
-    n_volu = len(volumic_nodes)
-    n_surf = len(surface_nodes)
     reduced_disps = jnp.concatenate(
         [
-            jnp.zeros((n_volu * 3,)),  # flatten free 3D displacements
-            jnp.zeros((len(surface_nodes) * 2,)),  # flatten surface 2D displacements
+            jnp.zeros((dof.n_volu * 3,)),  # volumic displacements (3 per node)
+            jnp.zeros((dof.n_surf * 2,)),  # surface tangential displacements (2 per node)
         ]
     )
 
@@ -80,13 +71,13 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str):
         objective,
         points=points,
         cells=cells,
-        n_volu=n_volu,
-        n_surf=n_surf,
-        n_tot=n_tot,
-        volumic_nodes=volumic_nodes,
-        surface_nodes=surface_nodes,
-        T1=T1,
-        T2=T2,
+        n_volu=dof.n_volu,
+        n_surf=dof.n_surf,
+        n_tot=dof.n_tot,
+        volumic_nodes=dof.volumic_nodes,
+        surface_nodes=dof.surface_nodes,
+        T1=dof.T1,
+        T2=dof.T2,
     )
 
     final_params, final_state = run_opt(
@@ -97,16 +88,24 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str):
         tol=1e-6,
     )
 
-    volu_disps = final_params[: n_volu * 3].reshape((n_volu, 3))
-    surf_disps = final_params[n_volu * 3 :].reshape((n_surf, 2))
+    volu_disps = final_params[: dof.n_volu * 3].reshape((dof.n_volu, 3))
+    surf_disps = final_params[dof.n_volu * 3 :].reshape((dof.n_surf, 2))
 
-    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
+    all_disps = expand_displacements(
+        volu_disps,
+        surf_disps,
+        dof.volumic_nodes,
+        dof.surface_nodes,
+        dof.T1,
+        dof.T2,
+        dof.n_tot,
+    )
 
     moved_points = apply_nodal_displacements(points, all_disps)
 
     new_mesh = meshio.Mesh(points=np.array(moved_points), cells=[("hexahedron", np.array(cells))])
-    if os.path.exists(mesh_out):  # noqa: PTH110
-        os.remove(mesh_out)  # noqa: PTH107
+    if os.path.exists(mesh_out):
+        os.remove(mesh_out)
     new_mesh.write(mesh_out, file_format="gmsh")
 
 

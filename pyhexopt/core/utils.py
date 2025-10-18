@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -326,39 +327,55 @@ def get_interior_surface_nodes(points, cells):
     return surface_nodes
 
 
-def prepare_dof_masks_and_bases(points, cells) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+@dataclass
+class DofData:
+    volumic_nodes: jax.Array  # (Nv,)
+    surface_nodes: jax.Array  # (Ns,)
+    edge_nodes: jax.Array  # (Ne,)
+    T1: jax.Array  # (Ns, 3)
+    T2: jax.Array  # (Ns, 3)
+    n_tot: int
+    n_volu: int
+    n_surf: int
+    is_free: np.ndarray
+    is_surface: np.ndarray
+
+
+def prepare_dof_masks_and_bases(points, cells) -> DofData:
     """
     Split nodes into fixed, surface (2 ddl), and free (3 ddl).
-
-    Returns
-    -------
-    free_nodes : np.ndarray
-        Indices of fully free nodes (3 ddl).
-    surface_nodes : np.ndarray
-        Indices of tangential-only nodes (2 ddl).
-    fixed_nodes : np.ndarray
-        Indices of fully fixed nodes (0 ddl).
-    T1, T2 : (Ns, 3) arrays
-        Tangent bases for surface nodes.
-
+    Returns a structured dataclass containing indices and tangent bases.
     """
     boundary_nodes = get_boundary_nodes(points, cells)
     edge_nodes, _ = get_edge_nodes(points, cells)
-
     surface_nodes = get_interior_surface_nodes(points, cells)
 
+    n_tot = points.shape[0]
+
     # interior => all - boundary
-    all_nodes = np.arange(points.shape[0])
+    all_nodes = np.arange(n_tot)
     volumic_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
 
-    faces = get_boundary_faces(points, cells)  # you need this helper
+    faces = get_boundary_faces(points, cells)
     normals = compute_node_normals_from_faces(points, faces)
 
     T1, T2 = build_tangent_bases(points, normals, surface_nodes)
 
-    edge_nodes = jnp.array(edge_nodes, dtype=jnp.int32)
-    surface_nodes = jnp.array(surface_nodes, dtype=jnp.int32)
-    volumic_nodes = jnp.array(volumic_nodes, dtype=jnp.int32)
-    T1 = jnp.array(T1, dtype=jnp.float32)
-    T2 = jnp.array(T2, dtype=jnp.float32)
-    return volumic_nodes, surface_nodes, edge_nodes, T1, T2
+    is_free = np.zeros(n_tot, dtype=bool)
+    is_free[volumic_nodes] = True
+
+    is_surface = np.zeros(n_tot, dtype=bool)
+    is_surface[surface_nodes] = True
+
+    return DofData(
+        volumic_nodes=jnp.array(volumic_nodes, dtype=jnp.int32),
+        surface_nodes=jnp.array(surface_nodes, dtype=jnp.int32),
+        edge_nodes=jnp.array(edge_nodes, dtype=jnp.int32),
+        T1=jnp.array(T1, dtype=jnp.float32),
+        T2=jnp.array(T2, dtype=jnp.float32),
+        n_tot=n_tot,
+        n_volu=len(volumic_nodes),
+        n_surf=len(surface_nodes),
+        is_free=is_free,
+        is_surface=is_surface,
+    )
