@@ -19,6 +19,9 @@ dependencies = [
 gmsh = [
     "gmsh>=4.14.1",
 ]
+cuda12 = [
+    "jax[cuda12]>=0.7.2",
+]
 [tool.uv]
 package = true
 [tool.setuptools]

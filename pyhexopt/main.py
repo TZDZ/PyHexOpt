@@ -9,11 +9,11 @@ import numpy as np
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective, objective_free
-from pyhexopt.core.optim import run_opt
+from pyhexopt.core.optim import OptiParams, run_opt
 from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
 
 
-def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
+def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str, metaparams: OptiParams | None = None):
     ### Lecture du maillage
     if isinstance(mesh_in, str):
         msh = meshio.read(mesh_in)
@@ -34,13 +34,7 @@ def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
         free_mask=free_mask,
     )
 
-    final_params, final_state = run_opt(
-        fun=objective,
-        x0=free_disp0,
-        method="LBFGS",
-        max_iter=100,
-        tol=1e-6,
-    )
+    final_params, final_state = run_opt(fun=objective, x0=free_disp0, metaparams=metaparams)
 
     disp_ = expand_disp_from_mask(final_params, free_mask)
     new_points = apply_nodal_displacements(points, disp_)
@@ -50,12 +44,15 @@ def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str):
     new_mesh.write(mesh_out, file_format="gmsh")
 
 
-def main(mesh_in: str | meshio.Mesh, mesh_out: str):
+def main(mesh_in: str | meshio.Mesh, mesh_out: str, metaparams: OptiParams | None = None):
     # --- read mesh ---
     if isinstance(mesh_in, str | Path):
         msh = meshio.read(mesh_in)
     else:
         msh = mesh_in
+
+    if metaparams is None:
+        metaparams = OptiParams()
 
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
     dof = prepare_dof_masks_and_bases(points, cells)
@@ -80,13 +77,7 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str):
         T2=dof.T2,
     )
 
-    final_params, final_state = run_opt(
-        fun=objective_,
-        x0=reduced_disps,
-        method="LBFGS",
-        max_iter=100,
-        tol=1e-6,
-    )
+    final_params, final_state = run_opt(fun=objective_, x0=reduced_disps, metaparams=metaparams)
 
     volu_disps = final_params[: dof.n_volu * 3].reshape((dof.n_volu, 3))
     surf_disps = final_params[dof.n_volu * 3 :].reshape((dof.n_surf, 2))

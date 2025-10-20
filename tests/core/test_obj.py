@@ -17,7 +17,7 @@ def test_real_mesh(clean_square_mesh):
     fixed_indices = jnp.array([0, 3, 4, 7])  # e.g., one face is fixed
     fixed_mask = jnp.zeros((N,), dtype=bool).at[fixed_indices].set(True)
     obj = objective_simple(disp, points, cells, fixed_mask)
-    assert obj == 0
+    np.testing.assert_allclose(obj, 0, atol=1e-8)
 
 
 def test_real_mesh_not_optimal(clean_square_mesh):

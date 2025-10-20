@@ -10,6 +10,7 @@ from pyhexopt.adapters.example_creator import cube_gen, randomize_nodes
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_free
+from pyhexopt.core.optim import OptiParams
 from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
 from pyhexopt.main import main, main_simple
 
@@ -184,9 +185,10 @@ def test_heavy():
     out_mesh = Path("private/big_cube_rand_cured.msh")
     cube_gen(ref_mesh, disc=(6, 6, 6))
     randomize_nodes(ref_mesh, bad_mesh, delta=0.1)
-    main(mesh_in=bad_mesh, mesh_out=out_mesh)
+    metaparams = OptiParams()
+    main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_heavy()
+    pytest.main([__file__])
+    # test_heavy()
