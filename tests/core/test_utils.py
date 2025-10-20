@@ -31,7 +31,7 @@ def test_single_hex_boundary_nodes():
     # One hexahedron cell using these 8 points
     cells = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
 
-    boundary_nodes = get_boundary_nodes(points, cells)
+    boundary_nodes = get_boundary_nodes(cells)
 
     # For a single hex, all 8 nodes are boundary nodes
     expected = np.arange(8)
@@ -64,7 +64,7 @@ def test_two_adjacent_hexes_shared_face():
         ]
     )
 
-    boundary_nodes = get_boundary_nodes(points, cells)
+    boundary_nodes = get_boundary_nodes(cells)
     expected = np.arange(12)
 
     assert set(boundary_nodes) == set(expected)
@@ -73,7 +73,7 @@ def test_two_adjacent_hexes_shared_face():
 def test_3x3():
     msh = meshio.read(r"examples/Square_mesh/square.msh")
     points, cells = extract_points_and_cells(msh)
-    bnd_nodes = get_boundary_nodes(points, cells)
+    bnd_nodes = get_boundary_nodes(cells)
     assert len(bnd_nodes) == 56
     for n in (59, 60, 63, 64, 61, 62, 57, 58):
         assert n not in bnd_nodes
@@ -201,7 +201,7 @@ def test_no_boundary_faces_internal_mesh():
     edge_nodes, edge_mask = get_edge_nodes(points, cells, angle_deg=45.0)
 
     # All boundary nodes are cube corners
-    boundary_nodes = get_boundary_nodes(points, cells)
+    boundary_nodes = get_boundary_nodes(cells)
     # All 8 should be boundary and free-edge
     assert len(boundary_nodes) == 8
     assert np.all(edge_mask[boundary_nodes])
@@ -286,7 +286,7 @@ def test_single_vertical_normal():
     normals = np.array([[0.0, 0.0, 1.0]])
     movable = np.array([0], dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
 
     t1, t2 = T1[0], T2[0]
     n = normals[0]
@@ -307,7 +307,7 @@ def test_inclined_normal():
     normals = np.array([[1.0, 1.0, 1.0]]) / np.sqrt(3.0)
     movable = np.array([0], dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
     t1, t2 = T1[0], T2[0]
     n = normals[0]
 
@@ -330,7 +330,7 @@ def test_multiple_nodes_consistent_shapes():
     normals = np.tile(np.array([[0, 0, 1.0]]), (5, 1))
     movable = np.array([0, 2, 4], dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
 
     assert T1.shape == (3, 3)
     assert T2.shape == (3, 3)
@@ -346,7 +346,7 @@ def test_degenerate_normal_fallback():
     normals = np.array([[0.0, 0.0, 0.0]])
     movable = np.array([0], dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
     t1, t2 = T1[0], T2[0]
 
     # At least they should be normalized and orthogonal
@@ -363,7 +363,7 @@ def test_parallel_normals_different_refs():
     normals = np.array([[1.0, 0.0, 0.0]])  # parallel to a_default
     movable = np.array([0], dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
     t1, t2 = T1[0], T2[0]
     n = normals[0]
 
@@ -383,7 +383,7 @@ def test_small_random_normals_stability():
     points = np.zeros_like(normals)
     movable = np.arange(100, dtype=int)
 
-    T1, T2 = build_tangent_bases(points, normals, movable)
+    T1, T2 = build_tangent_bases(normals, movable)
     assert np.isfinite(T1).all()
     assert np.isfinite(T2).all()
     assert np.allclose(np.linalg.norm(T1, axis=1), 1.0, atol=1e-7)

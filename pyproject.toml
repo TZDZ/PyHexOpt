@@ -65,7 +65,7 @@ ignore = [
     "SIM108", #if-else-block-instead-of-if-exp ()
     "SIM109", # if-elif-else-block-instead-of-if-exp ()
     "EM102", #f-string-in-exception ()
-    "RET504","N803","N802"
+    "RET504","N803","N802","RET505"
 ]
 exclude = [
     ".bzr",

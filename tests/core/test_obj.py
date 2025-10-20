@@ -1,12 +1,11 @@
 import jax
 import jax.numpy as jnp
-import meshio
 import numpy as np
 import pytest
 
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import uv_to_disp_full
-from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_free, objective_simple
+from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_simple
 from pyhexopt.core.utils import build_tangent_bases
 
 
@@ -39,7 +38,7 @@ def test_real_mesh_masked(clean_square_mesh):
     fixed_indices = jnp.array([0, 3, 4, 7])  # e.g., one face is fixed
     free_mask = jnp.ones((N,), dtype=bool).at[fixed_indices].set(False)
     free_disp0 = disp[free_mask]
-    obj = objective_free(free_disp0, points, cells, free_mask)
+    obj = objective_simple(free_disp0, points, cells, free_mask)
     assert obj > 0
 
 
@@ -51,7 +50,7 @@ def test_real_mesh_masked_grad(clean_square_mesh):
     fixed_indices = jnp.array([0, 3, 4, 7])  # e.g., one face is fixed
     free_mask = jnp.ones((N,), dtype=bool).at[fixed_indices].set(False)
     free_disp0 = disp[free_mask]
-    grad = jax.grad(objective_free)(free_disp0, points, cells, free_mask)
+    grad = jax.grad(objective_simple)(free_disp0, points, cells, free_mask)
     assert grad.shape == free_disp0.shape
 
 
@@ -165,7 +164,7 @@ def test_expand_displacements_places_values_correctly():
     normals = np.zeros((N, 3), dtype=float)
     normals[:, 2] = 1.0  # all normals pointing up
     # build tangent bases for only surface nodes
-    T1, T2 = build_tangent_bases(np.zeros((N, 3)), normals, surface_nodes)
+    T1, T2 = build_tangent_bases(normals, surface_nodes)
 
     free_disp_3d = np.array([[0.5, 0.0, 0.0], [0.0, -0.3, 0.0]], dtype=float)  # move node 0 in x, node1 in -y
     surface_disp_uv = np.array([[1.0, 2.0], [-0.5, 0.25]], dtype=float)  # u->x, v->y
@@ -215,7 +214,7 @@ def test_surface_displacement_is_tangential():
     # pick surface nodes (some subset)
     surface_nodes = np.array([1, 2, 3], dtype=int)  # test these
     # build tangent bases for them
-    T1, T2 = build_tangent_bases(np.zeros((N, 3)), normals, surface_nodes)
+    T1, T2 = build_tangent_bases(normals, surface_nodes)
 
     # uv displacements (random)
     rng = np.random.default_rng(0)
@@ -244,7 +243,7 @@ def test_uv_to_disp_full_jax_and_numpy_agree():
     surface_nodes = np.array([2, 4, 5], dtype=int)
     normals = np.zeros((N, 3))
     normals[:, 2] = 1.0  # all z-up
-    T1, T2 = build_tangent_bases(np.zeros((N, 3)), normals, surface_nodes)
+    T1, T2 = build_tangent_bases(normals, surface_nodes)
 
     uv = np.array([[0.1, 0.2], [-1.0, 0.3], [0.5, -0.2]], dtype=float)
     # numpy mapping

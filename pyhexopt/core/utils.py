@@ -45,7 +45,7 @@ def _hex_faces_ordered_from_cell(cell: np.ndarray) -> list[tuple[int, ...]]:
     return faces
 
 
-def get_boundary_nodes(points, cells) -> np.ndarray:
+def get_boundary_nodes(cells) -> np.ndarray:
     """
     Return sorted numpy array of node indices that belong to the boundary.
     Works robustly by using canonical integer keys for faces.
@@ -65,7 +65,7 @@ def get_boundary_nodes(points, cells) -> np.ndarray:
     return np.array(sorted(boundary_nodes), dtype=int)
 
 
-def get_boundary_faces(points, cells) -> list[tuple[int, ...]]:
+def get_boundary_faces(cells) -> list[tuple[int, ...]]:
     """
     Return ordered boundary faces (as tuples of node indices).
     A face is considered boundary if it appears exactly once across all cells.
@@ -91,11 +91,11 @@ def face_normal(points: np.ndarray, face: tuple[int, ...]) -> np.ndarray:
     Works for tri (len==3) and quad (len==4); returns zero vector for degenerate faces.
     """
     coords = points[np.array(face, dtype=int)]
-    if coords.shape[0] == 3:
+    if coords.shape[0] == 3:  # noqa: PLR2004
         v0 = coords[1] - coords[0]
         v1 = coords[2] - coords[0]
         n = np.cross(v0, v1)
-    elif coords.shape[0] == 4:
+    elif coords.shape[0] == 4:  # noqa: PLR2004
         # split quad into two triangles (0,1,2) and (0,2,3)
         v01 = coords[1] - coords[0]
         v02 = coords[2] - coords[0]
@@ -123,9 +123,7 @@ def compute_face_normals(points: np.ndarray, faces: list[tuple[int, ...]]) -> np
     Vectorized-ish loop to compute normals for a list of ordered faces.
     Returns an array shape (F,3).
     """
-    normals = []
-    for f in faces:
-        normals.append(face_normal(points, f))
+    normals = [face_normal(points, f) for f in faces]
     return np.vstack(normals) if len(normals) > 0 else np.zeros((0, 3))
 
 
@@ -168,7 +166,7 @@ def detect_edge_mask_from_face_normals(
         # filter degenerate normals
         norms = np.linalg.norm(normals, axis=1)
         valid = norms > _EPS
-        if np.sum(valid) < 2:
+        if np.sum(valid) < 2:  # noqa: PLR2004
             continue
         normals = normals[valid]
 
@@ -197,12 +195,11 @@ def get_edge_nodes(points, cells, angle_deg: float = 30.0) -> tuple[np.ndarray, 
     Composed of the smaller functions above, easy to unit-test each piece.
     """
     # 1) boundary faces only
-    boundary_faces = get_boundary_faces(points, cells)
+    boundary_faces = get_boundary_faces(cells)
     if len(boundary_faces) == 0:
         N = int(np.asarray(points).shape[0])
         return np.array([], dtype=int), np.zeros((N,), dtype=bool)
 
-    # points = np.asarray(mesh.points, dtype=float)
     # 2) compute normals for boundary faces
     face_normals = compute_face_normals(points, boundary_faces)
     # 3) detect edge mask from face normals
@@ -259,7 +256,7 @@ def compute_node_normals_from_faces(
     return node_normals
 
 
-def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_indices: np.ndarray):
+def build_tangent_bases(node_normals: np.ndarray, movable_indices: np.ndarray):
     """
     Build an orthonormal tangent basis (t1, t2) for each movable node.
     - points: (N,3)
@@ -271,7 +268,6 @@ def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_in
     - T2: (M,3)
 
     """
-    N = points.shape[0]
     M = movable_indices.shape[0]
     T1 = np.zeros((M, 3), dtype=float)
     T2 = np.zeros((M, 3), dtype=float)
@@ -289,7 +285,7 @@ def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_in
             t1 = np.array([1.0, 0.0, 0.0])
         else:
             # pick a reference vector not parallel to n
-            a = a_default if abs(np.dot(n, a_default)) < 0.9 else a_alt
+            a = a_default if abs(np.dot(n, a_default)) < 0.9 else a_alt  # noqa: PLR2004
             t1 = np.cross(a, n)
             t1_norm = np.linalg.norm(t1)
             if t1_norm < _EPS:
@@ -321,7 +317,7 @@ def build_tangent_bases(points: np.ndarray, node_normals: np.ndarray, movable_in
 
 
 def get_interior_surface_nodes(points, cells):
-    boundary_nodes = get_boundary_nodes(points, cells)
+    boundary_nodes = get_boundary_nodes(cells)
     edge_nodes, _ = get_edge_nodes(points, cells)
     surface_nodes = np.setdiff1d(boundary_nodes, edge_nodes, assume_unique=True)
     return surface_nodes
@@ -346,7 +342,7 @@ def prepare_dof_masks_and_bases(points, cells) -> DofData:
     Split nodes into fixed, surface (2 ddl), and free (3 ddl).
     Returns a structured dataclass containing indices and tangent bases.
     """
-    boundary_nodes = get_boundary_nodes(points, cells)
+    boundary_nodes = get_boundary_nodes(cells)
     edge_nodes, _ = get_edge_nodes(points, cells)
     surface_nodes = get_interior_surface_nodes(points, cells)
 
@@ -356,10 +352,10 @@ def prepare_dof_masks_and_bases(points, cells) -> DofData:
     all_nodes = np.arange(n_tot)
     volumic_nodes = np.setdiff1d(all_nodes, boundary_nodes, assume_unique=True)
 
-    faces = get_boundary_faces(points, cells)
+    faces = get_boundary_faces(cells)
     normals = compute_node_normals_from_faces(points, faces)
 
-    T1, T2 = build_tangent_bases(points, normals, surface_nodes)
+    T1, T2 = build_tangent_bases(normals, surface_nodes)
 
     is_free = np.zeros(n_tot, dtype=bool)
     is_free[volumic_nodes] = True

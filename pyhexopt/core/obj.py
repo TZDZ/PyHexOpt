@@ -2,52 +2,16 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax.typing import ArrayLike
 
 from pyhexopt.core.jaxobian import GAUSS_POINTS, compute_scaled_jacobians_from_coords
-from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points, uv_to_disp_full
+from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
 
 
 def apply_masked_displacement(points: ArrayLike, disp: ArrayLike, free_mask: ArrayLike) -> jax.Array:
     """Apply displacements only to free nodes (JAX-friendly)."""
     mask = free_mask.astype(points.dtype)[:, None]
     return points + disp * mask
-
-
-def objective_simple(disp: ArrayLike, points: ArrayLike, cells: ArrayLike, free_mask: ArrayLike) -> jax.Array:
-    """Example: minimize average deviation of Jacobian determinant from 1."""
-    moved_points = apply_masked_displacement(points, disp, free_mask)
-    node_coords = nodes_from_points(moved_points, cells)
-
-    jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
-    worst_jac = jnp.min(jac, axis=1)
-    return jnp.sum((worst_jac - 1.0) ** 2)
-
-
-@partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot"))
-def objective(  # noqa: PLR0913
-    reduced_disps: jax.Array,
-    points: jax.Array,
-    cells: jax.Array,
-    n_volu: int,
-    n_surf: int,
-    n_tot: int,
-    volumic_nodes: jax.Array,
-    surface_nodes: jax.Array,
-    T1: jax.Array,
-    T2: jax.Array,
-) -> jax.Array:
-    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
-    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
-
-    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
-
-    moved_points = apply_nodal_displacements(points, all_disps)
-    node_coords = nodes_from_points(moved_points, cells)
-    jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
-    worst_jac = jnp.min(jac, axis=1)
-    return jnp.sum((worst_jac - 1.0) ** 2)
 
 
 @jax.jit
@@ -61,7 +25,7 @@ def expand_disp_from_mask(free_disp: ArrayLike, free_mask: ArrayLike) -> jax.Arr
 
 
 @partial(jax.jit, static_argnames=("N",))
-def expand_displacements(
+def expand_displacements(  # noqa: PLR0913
     free_disp_3d: jax.Array,
     surface_disp_uv: jax.Array,
     free_nodes: jax.Array,
@@ -78,13 +42,14 @@ def expand_displacements(
         surface_disp_uv: (S,2) local UV displacements for surface nodes
         free_nodes: (F,) indices of fully-free nodes
         surface_nodes: (S,) indices of surface nodes
-        T1, T2: (S,3) tangent bases for surface nodes
+        T1: (S,3) tangent bases for surface nodes
+        T2: (S,3) tangent bases for surface nodes
         N: total number of nodes
 
     Returns:
         disp_full: (N,3) displacement field for all nodes
-    """
 
+    """
     # ensure JAX arrays (safe if already are)
     free_nodes = jnp.asarray(free_nodes, dtype=jnp.int32)
     surface_nodes = jnp.asarray(surface_nodes, dtype=jnp.int32)
@@ -107,7 +72,7 @@ def expand_displacements(
 
 
 @jax.jit
-def objective_free(
+def objective_simple(
     free_disp: ArrayLike,
     points: ArrayLike,
     cells: ArrayLike,
@@ -133,44 +98,40 @@ def objective_free(
         Objective value, e.g. deviation of Jacobian determinant from 1.
 
     """
-    # Expand displacements to full node set
     disp = expand_disp_from_mask(free_disp, free_mask)
-
-    # Apply the displacements
     moved_points = points + disp
-
-    # Per-element coordinates
     node_coords = nodes_from_points(moved_points, cells)
 
-    # Compute per-element Jacobians
     jac = compute_scaled_jacobians_from_coords(
         node_coords,
         at_center=False,
         sample_points=GAUSS_POINTS,
     )  # (E, 8)
 
-    # Example objective: penalize deviation of smallest jacobian from 1
     min_jac = jnp.min(jac, axis=1)
     return jnp.sum((min_jac - 1.0) ** 2)
 
 
-def objective_mixed_dof(
-    disp_concat,  # concatenated array: [free_disp_3d, surface_disp_uv]
-    points,
-    cells,
-    free_nodes,
-    surface_nodes,
-    T1,
-    T2,
-):
-    n_free = len(free_nodes)
-    free_disp_3d = disp_concat[:n_free]
-    surface_disp_uv = disp_concat[n_free:]
+@partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot"))
+def objective(  # noqa: PLR0913
+    reduced_disps: jax.Array,
+    points: jax.Array,
+    cells: jax.Array,
+    n_volu: int,
+    n_surf: int,
+    n_tot: int,
+    volumic_nodes: jax.Array,
+    surface_nodes: jax.Array,
+    T1: jax.Array,
+    T2: jax.Array,
+) -> jax.Array:
+    volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
+    surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
 
-    disp_full = expand_displacements(free_disp_3d, surface_disp_uv, free_nodes, surface_nodes, T1, T2, points.shape[0])
+    all_disps = expand_displacements(volu_disps, surf_disps, volumic_nodes, surface_nodes, T1, T2, n_tot)
 
-    moved_points = points + disp_full
+    moved_points = apply_nodal_displacements(points, all_disps)
     node_coords = nodes_from_points(moved_points, cells)
     jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
-    min_jac = jnp.min(jac, axis=1)
-    return jnp.sum((min_jac - 1.0) ** 2)
+    worst_jac = jnp.min(jac, axis=1)
+    return jnp.sum((worst_jac - 1.0) ** 2)

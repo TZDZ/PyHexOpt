@@ -9,7 +9,7 @@ import pytest
 from pyhexopt.adapters.example_creator import cube_gen, randomize_nodes
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
-from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_free
+from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_simple
 from pyhexopt.core.optim import OptiParams
 from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
 from pyhexopt.main import main, main_simple
@@ -26,7 +26,7 @@ def test_real_mesh_masked_grad(clean_square_mesh, out_path: Path):
 
     ### préproc
     points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
-    boundary = get_boundary_nodes(points, cells)
+    boundary = get_boundary_nodes(cells)
     disp = jnp.zeros_like(points)  # shape (N,3)
     disp = disp.at[moving_node].set(jnp.array(move, dtype=jnp.float32))
     fixed_indices = jnp.array(boundary)  # e.g., one face is fixed
@@ -34,8 +34,8 @@ def test_real_mesh_masked_grad(clean_square_mesh, out_path: Path):
     free_disp0 = disp[free_mask]
 
     ### Pour l'optim : objective_free -> sortira free_disp_opt
-    assert objective_free(free_disp0, points, cells, free_mask) > 0
-    grad = jax.grad(objective_free)(free_disp0, points, cells, free_mask)
+    assert objective_simple(free_disp0, points, cells, free_mask) > 0
+    grad = jax.grad(objective_simple)(free_disp0, points, cells, free_mask)
     np.testing.assert_allclose(grad[0], 0.0)
     assert np.any(np.abs(grad[1]) > 0.01)
     assert grad.shape[0] == len(points) - len(boundary)
