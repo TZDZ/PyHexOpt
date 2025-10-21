@@ -185,7 +185,7 @@ def test_heavy():
     out_mesh = Path("private/big_cube_rand_cured.msh")
     cube_gen(ref_mesh, disc=(6, 6, 6))
     randomize_nodes(ref_mesh, bad_mesh, delta=0.1)
-    metaparams = OptiParams()
+    metaparams = OptiParams(max_iter=5000, method="lbfgs", alpha=1.0)
     main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
 
 

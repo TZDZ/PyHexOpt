@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from pyhexopt.core.jaxobian import GAUSS_POINTS, compute_scaled_jacobians_from_coords
+from pyhexopt.core.jaxobian import GAUSS_POINTS, compute_scaled_jacobians_from_coords, hex_edge_aspect_ratio
 from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
 
 
@@ -112,7 +112,7 @@ def objective_simple(
     return jnp.sum((min_jac - 1.0) ** 2)
 
 
-@partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot"))
+@partial(jax.jit, static_argnames=("n_volu", "n_surf", "n_tot", "alpha"))
 def objective(  # noqa: PLR0913
     reduced_disps: jax.Array,
     points: jax.Array,
@@ -124,6 +124,7 @@ def objective(  # noqa: PLR0913
     surface_nodes: jax.Array,
     T1: jax.Array,
     T2: jax.Array,
+    alpha: float = 1.0,
 ) -> jax.Array:
     volu_disps = reduced_disps[: n_volu * 3].reshape((n_volu, 3))
     surf_disps = reduced_disps[n_volu * 3 :].reshape((n_surf, 2))
@@ -134,4 +135,6 @@ def objective(  # noqa: PLR0913
     node_coords = nodes_from_points(moved_points, cells)
     jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
     worst_jac = jnp.min(jac, axis=1)
-    return jnp.sum((worst_jac - 1.0) ** 2)
+    aspect_ratio = hex_edge_aspect_ratio(node_coords)
+    score = jnp.abs(worst_jac - 1.0) ** (alpha) * aspect_ratio ** (1 - alpha)
+    return jnp.sum(score**2)

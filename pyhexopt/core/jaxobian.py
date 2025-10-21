@@ -21,6 +21,12 @@ REF_SIGNS = jnp.array(
     ],
     dtype=jnp.float32,
 )
+# fmt:off
+EDGE_PAIRS = jnp.array([
+    [0,1], [1,2], [2,3], [3,0],   # bottom loop
+    [4,5], [5,6], [6,7], [7,4],   # top loop
+    [0,4], [1,5], [2,6], [3,7],   # vertical edges
+], dtype=jnp.int32) # fmt: on
 GAUSS_POINTS = jnp.array(
     [
         [-1, -1, -1],
@@ -258,3 +264,22 @@ def compute_scaled_jacobians_from_coords(
     J, detJ = _compute_jacobians_at_points(node_coords, dN_q)
     SJ = _scaled_jac_from_points(J, detJ, eps=eps)
     return SJ
+
+
+@jax.jit
+def hex_edge_aspect_ratio(node_coords:jax.Array, eps: float = 1e-12) -> jax.Array:
+    """
+    Edge-length based aspect ratio for each hexahedral element.
+    returns (E,) array of ratios = max_edge / min_edge (or +inf if min_edge <= eps)
+    """
+    # gather edge endpoints coords: (E,12,2,3)
+    idx = EDGE_PAIRS  # (12,2)
+    # Use take to index in jax-friendly batched way
+    edge_a = node_coords[:, idx[:, 0], :]  # (E,12,3)
+    edge_b = node_coords[:, idx[:, 1], :]  # (E,12,3)
+    edge_vecs = edge_b - edge_a  # (E,12,3)
+    edge_lens = jnp.linalg.norm(edge_vecs, axis=-1)  # (E,12)
+    max_len = jnp.max(edge_lens, axis=1)
+    min_len = jnp.min(edge_lens, axis=1)
+    aspect = jnp.where(min_len > eps, max_len / min_len, jnp.inf)
+    return aspect

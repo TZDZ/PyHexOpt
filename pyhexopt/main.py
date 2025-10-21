@@ -77,6 +77,7 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str | Path, metaparams: OptiParam
         surface_nodes=dof.surface_nodes,
         T1=dof.T1,
         T2=dof.T2,
+        alpha=metaparams.alpha,
     )
 
     final_params, final_state = run_opt(fun=objective_, x0=reduced_disps, metaparams=metaparams)

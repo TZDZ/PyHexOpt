@@ -12,6 +12,7 @@ class OptiParams:
     max_iter: int = 100
     tol: float = 1e-6
     lr: float = 1e-3
+    alpha: float = 1.0  # balance between 1.0=jacobian and 0.0=aspect ratio
 
 
 def run_lbfgs(fun: Callable, x0: jax.Array, metaparams: OptiParams) -> tuple[jax.Array, jax.Array]:
