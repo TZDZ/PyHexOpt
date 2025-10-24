@@ -37,7 +37,7 @@ def extract_hex_node_coords(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True) 
     return jnp.asarray(node_coords, dtype=dtype)
 
 
-def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True):
+def extract_points_and_cells(mesh: meshio.Mesh, dtype=jnp.float32, verbose=True) -> tuple[jax.Array, jax.Array]:
     """
     Extracts node coordinates and hexahedral connectivity from a meshio mesh.
 

@@ -47,6 +47,25 @@ def cube_gen(out_file: Path, disc: tuple[int, int, int] = (4, 4, 4)):
     gmsh.finalize()
 
 
+def cube_gen_2layers(out_file: Path, disc: tuple[int, int, int] = (4, 4, 4)):
+    import gmsh
+
+    gmsh.initialize()
+    N1, N2, N3 = disc
+    p0 = gmsh.model.geo.addPoint(0, 0, 0)
+    l0 = gmsh.model.geo.extrude([(0, p0)], 1, 0, 0, [N1], [1])
+    s0 = gmsh.model.geo.extrude([l0[1]], 0, 1, 0, [N2], [1], recombine=True)
+    v1 = gmsh.model.geo.extrude([(2, s0[1][1])], 0, 0, 0.8, [N3 // 2], [1], recombine=True)
+    v2 = gmsh.model.geo.extrude([(2, v1[0][1])], 0, 0, 0.2, [N3 // 2], [1], recombine=True)
+    gmsh.model.geo.synchronize()
+    gmsh.model.addPhysicalGroup(3, [v1[1][1], v2[1][1]])
+    gmsh.model.mesh.generate(3)
+    if not out_file.parent.exists():
+        out_file.parent.mkdir(parents=True)
+    gmsh.write(str(out_file))
+    gmsh.finalize()
+
+
 def randomize_nodes(mesh_in: Path, mesh_out: Path, delta: float = 0.1):
     mesh = meshio.read(mesh_in)
     points, cells = extract_points_and_cells(mesh, dtype=jnp.float32)

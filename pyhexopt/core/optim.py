@@ -10,7 +10,7 @@ import optax
 class OptiParams:
     method: str = "LBFGS"
     max_iter: int = 100
-    tol: float = 1e-6
+    tol: float = 1e-7
     lr: float = 1e-3
     alpha: float = 1.0  # balance between 1.0=jacobian and 0.0=aspect ratio
 

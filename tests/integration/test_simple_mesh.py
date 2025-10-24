@@ -6,7 +6,7 @@ import meshio
 import numpy as np
 import pytest
 
-from pyhexopt.adapters.example_creator import cube_gen, randomize_nodes
+from pyhexopt.adapters.example_creator import cube_gen, cube_gen_2layers, randomize_nodes
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_simple
@@ -183,12 +183,25 @@ def test_heavy():
     ref_mesh = Path("private/big_cube.msh")
     bad_mesh = Path("private/big_cube_rand.msh")
     out_mesh = Path("private/big_cube_rand_cured.msh")
-    cube_gen(ref_mesh, disc=(6, 6, 6))
-    randomize_nodes(ref_mesh, bad_mesh, delta=0.1)
-    metaparams = OptiParams(max_iter=5000, method="lbfgs", alpha=1.0)
+    dim = 8
+    cube_gen(ref_mesh, disc=(dim, dim, dim))
+    randomize_nodes(ref_mesh, bad_mesh, delta=0.5 / dim)
+    metaparams = OptiParams(max_iter=500, method="lbfgs", alpha=0.9, lr=1e-4)
+    main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
+
+
+@pytest.mark.slow
+def test_not_regular():
+    ref_mesh = Path("private/non_reg_cube.msh")
+    bad_mesh = Path("private/non_reg_rand.msh")
+    out_mesh = Path("private/non_reg_rand_cured.msh")
+    dim = 8
+    cube_gen_2layers(ref_mesh, disc=(dim, dim, dim))
+    randomize_nodes(ref_mesh, bad_mesh, delta=0.1 / dim)
+    metaparams = OptiParams(max_iter=500, method="lbfgs", alpha=0.9, lr=1e-4)
     main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
-    # test_heavy()
+    # pytest.main([__file__])
+    test_heavy()

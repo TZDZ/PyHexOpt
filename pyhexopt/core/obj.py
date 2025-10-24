@@ -137,4 +137,4 @@ def objective(  # noqa: PLR0913
     worst_jac = jnp.min(jac, axis=1)
     aspect_ratio = hex_edge_aspect_ratio(node_coords)
     score = jnp.abs(worst_jac - 1.0) ** (alpha) * aspect_ratio ** (1 - alpha)
-    return jnp.sum(score**2)
+    return jnp.sum(score**2) / jnp.sqrt(n_tot)
