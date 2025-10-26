@@ -2,12 +2,15 @@ import os
 from functools import partial
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import meshio
 import numpy as np
 
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
-from pyhexopt.core.move import apply_nodal_displacements
+from pyhexopt.core.jaxobian import GAUSS_POINTS, compute_scaled_jacobians_from_coords
+from pyhexopt.core.move import apply_nodal_displacements, nodes_from_points
+from pyhexopt.core.neighbor import get_element_neighborhood
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective, objective_simple
 from pyhexopt.core.optim import OptiParams, run_opt
 from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
@@ -44,19 +47,7 @@ def main_simple(mesh_in: str | meshio.Mesh, mesh_out: str, metaparams: OptiParam
     new_mesh.write(mesh_out, file_format="gmsh")
 
 
-def main(mesh_in: str | meshio.Mesh, mesh_out: str | Path, metaparams: OptiParams | None = None):
-    # --- read mesh ---
-    if isinstance(mesh_in, str | Path):
-        msh = meshio.read(mesh_in)
-    else:
-        msh = mesh_in
-    if isinstance(mesh_out, str):
-        mesh_out = Path(mesh_out)
-
-    if metaparams is None:
-        metaparams = OptiParams()
-
-    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+def pure_main(points: jax.Array, cells: jax.Array, metaparams: OptiParams) -> jax.Array:
     dof = prepare_dof_masks_and_bases(points, cells)
 
     reduced_disps = jnp.concatenate(
@@ -96,11 +87,52 @@ def main(mesh_in: str | meshio.Mesh, mesh_out: str | Path, metaparams: OptiParam
     )
 
     moved_points = apply_nodal_displacements(points, all_disps)
+    return moved_points
+
+
+def main(mesh_in: str | meshio.Mesh, mesh_out: str | Path, metaparams: OptiParams | None = None):
+    # --- read mesh ---
+    if isinstance(mesh_in, str | Path):
+        msh = meshio.read(mesh_in)
+    else:
+        msh = mesh_in
+    if isinstance(mesh_out, str):
+        mesh_out = Path(mesh_out)
+
+    if metaparams is None:
+        metaparams = OptiParams()
+
+    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+
+    moved_points = pure_main(points, cells, metaparams)
 
     new_mesh = meshio.Mesh(points=np.array(moved_points), cells=[("hexahedron", np.array(cells))])
     if mesh_out.exists():
         mesh_out.unlink()
     new_mesh.write(str(mesh_out), file_format="gmsh")
+
+
+def recursive_opt(points, cells, node_elem_index_data, metaparams: OptiParams):
+    """
+    Optimize local neighborhood of `elem_index` and update global points.
+    JAX-compatible: no Python dicts or int conversions.
+    """
+    for _ in range(20):
+        node_coords = nodes_from_points(points, cells)
+        jac = compute_scaled_jacobians_from_coords(node_coords, at_center=False, sample_points=GAUSS_POINTS)
+        jac_min_per_elem = jnp.min(jac, axis=1)
+
+        elem_index = jnp.argmin(jac_min_per_elem)
+        neigh_nodes, neigh_elems = get_element_neighborhood(cells, node_elem_index_data, elem_index, metaparams.stencil)
+        sub_cells = cells[neigh_elems]
+        remap = jnp.searchsorted(neigh_nodes, sub_cells)
+
+        sub_points = points[neigh_nodes]
+        moved_sub_points = pure_main(sub_points, remap, metaparams=metaparams)
+
+        points = points.at[neigh_nodes].set(moved_sub_points)
+
+    return points
 
 
 if __name__ == "__main__":

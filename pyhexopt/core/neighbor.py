@@ -31,7 +31,7 @@ def build_element_adjacency(cells: jnp.ndarray) -> jnp.ndarray:
     return adjacency
 
 
-def get_element_neighborhood(cells: jnp.ndarray, elem_index: int, depth: int = 1):
+def get_element_neighborhood_old(cells: jnp.ndarray, elem_index: int, depth: int = 1):
     """
     Get i-th neighborhood of a given element (JAX-compatible).
 
@@ -55,6 +55,82 @@ def get_element_neighborhood(cells: jnp.ndarray, elem_index: int, depth: int = 1
         frontier = next_frontier
 
     # include the last frontier as well
+    visited = jnp.logical_or(visited, frontier)
+
+    neigh_elems = jnp.where(visited)[0]
+    neigh_nodes = jnp.unique(cells[neigh_elems].ravel())
+    return neigh_nodes, neigh_elems
+
+
+def build_node_to_elements_sorted(cells: jnp.ndarray):
+    """
+    Build arrays:
+      node_ids_sorted : shape (8*E,) sorted node indices (repeated per element)
+      elem_ids_sorted : shape (8*E,) element indices aligned with node_ids_sorted
+    plus unique_nodes, node_starts, node_counts (optional).
+    """
+    E, Nn = cells.shape
+    elem_ids = jnp.repeat(jnp.arange(E, dtype=jnp.int32), Nn)  # (8*E,)
+    node_ids = cells.ravel()  # (8*E,)
+    order = jnp.argsort(node_ids)
+    node_ids_sorted = node_ids[order]
+    elem_ids_sorted = elem_ids[order]
+
+    # unique_nodes, node_starts, node_counts may be useful for other uses
+    unique_nodes, node_starts, node_counts = jnp.unique(node_ids_sorted, return_index=True, return_counts=True)
+
+    return {
+        "node_ids_sorted": node_ids_sorted,
+        "elem_ids_sorted": elem_ids_sorted,
+        "unique_nodes": unique_nodes,
+        "node_starts": node_starts,
+        "node_counts": node_counts,
+    }
+
+
+def get_element_neighborhood(
+    cells: jnp.ndarray,
+    node_elem_index_data: dict,
+    elem_index: int,
+    depth: int = 1,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Get nodes and elements in the depth-neighborhood of elem_index using
+    node->elements sorted arrays (JAX-compatible).
+    Returns (neigh_nodes, neigh_elems).
+    """
+    E = cells.shape[0]
+    node_ids_sorted = node_elem_index_data["node_ids_sorted"]
+    elem_ids_sorted = node_elem_index_data["elem_ids_sorted"]
+
+    visited = jnp.zeros(E, dtype=bool)
+    frontier = jnp.zeros(E, dtype=bool).at[elem_index].set(True)
+
+    for _ in range(depth):
+        # elements currently on the frontier (exact list, no padding)
+        frontier_elems = jnp.where(frontier)[0]  # variable-length array of indices
+
+        # if frontier is empty, stop
+        if frontier_elems.size == 0:
+            break
+
+        # gather nodes used by frontier elements
+        nodes = jnp.unique(cells[frontier_elems].ravel())
+
+        # find all element ids that reference any of these nodes
+        mask = jnp.isin(node_ids_sorted, nodes)
+        elems_touching_nodes = jnp.unique(elem_ids_sorted[mask])
+
+        # mark current frontier visited first
+        visited = jnp.logical_or(visited, frontier)
+
+        # new frontier = those elems touching nodes but not yet visited
+        next_frontier_mask = jnp.logical_and(
+            jnp.zeros(E, dtype=bool).at[elems_touching_nodes].set(True), jnp.logical_not(visited)
+        )
+        frontier = next_frontier_mask
+
+    # include last frontier
     visited = jnp.logical_or(visited, frontier)
 
     neigh_elems = jnp.where(visited)[0]

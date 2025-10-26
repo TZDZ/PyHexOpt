@@ -9,10 +9,11 @@ import pytest
 from pyhexopt.adapters.example_creator import cube_gen, cube_gen_2layers, randomize_nodes
 from pyhexopt.adapters.meshio_ import extract_points_and_cells
 from pyhexopt.core.move import apply_nodal_displacements
+from pyhexopt.core.neighbor import build_node_to_elements_sorted, get_element_neighborhood
 from pyhexopt.core.obj import expand_disp_from_mask, expand_displacements, objective_simple
 from pyhexopt.core.optim import OptiParams
 from pyhexopt.core.utils import get_boundary_nodes, prepare_dof_masks_and_bases
-from pyhexopt.main import main, main_simple
+from pyhexopt.main import main, main_simple, pure_main, recursive_opt
 
 
 def test_real_mesh_masked_grad(clean_square_mesh, out_path: Path):
@@ -188,6 +189,9 @@ def test_heavy():
     randomize_nodes(ref_mesh, bad_mesh, delta=0.5 / dim)
     metaparams = OptiParams(max_iter=500, method="lbfgs", alpha=0.9, lr=1e-4)
     main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
+    clean_square_mesh = meshio.read(ref_mesh)
+    corrected_msh = meshio.read(out_mesh)
+    np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
 @pytest.mark.slow
@@ -200,8 +204,34 @@ def test_not_regular():
     randomize_nodes(ref_mesh, bad_mesh, delta=0.1 / dim)
     metaparams = OptiParams(max_iter=500, method="lbfgs", alpha=0.9, lr=1e-4)
     main(mesh_in=bad_mesh, mesh_out=out_mesh, metaparams=metaparams)
+    clean_square_mesh = meshio.read(ref_mesh)
+    corrected_msh = meshio.read(out_mesh)
+    np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
+
+
+@pytest.mark.slow
+def test_local():
+    ref_mesh = Path("private/big_cube.msh")
+    out_mesh = Path("private/big_cube_rand_cured.msh")
+    dim = 15
+
+    cube_gen(ref_mesh, disc=(dim, dim, dim))
+    msh = randomize_nodes(ref_mesh, mesh_out=None, delta=0.5 / dim)
+
+    metaparams = OptiParams(max_iter=500, method="lbfgs", alpha=0.9, lr=1e-4, stencil=4)
+
+    points, cells = extract_points_and_cells(msh, dtype=jnp.float32)
+    node_elem_index_data = build_node_to_elements_sorted(cells)
+
+    points = recursive_opt(points, cells, node_elem_index_data, metaparams=metaparams)
+
+    corrected_msh = meshio.Mesh(points=np.array(points), cells=[("hexahedron", np.array(cells))])
+    corrected_msh.write(str(out_mesh), file_format="gmsh")
+
+    clean_square_mesh = meshio.read(ref_mesh)
+    np.testing.assert_allclose(clean_square_mesh.points, corrected_msh.points, atol=2e-3)
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    test_heavy()
+    # pytest.main([__file__, "-m", "slow"])
+    test_local()

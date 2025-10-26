@@ -13,6 +13,7 @@ class OptiParams:
     tol: float = 1e-7
     lr: float = 1e-3
     alpha: float = 1.0  # balance between 1.0=jacobian and 0.0=aspect ratio
+    stencil: int = 12
 
 
 def run_lbfgs(fun: Callable, x0: jax.Array, metaparams: OptiParams) -> tuple[jax.Array, jax.Array]:

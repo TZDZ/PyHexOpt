@@ -29,7 +29,7 @@ def move_modes(mesh_in, mesh_out_name):
     new_mesh.write(path_out / mesh_out_name, file_format="gmsh")
 
 
-def cube_gen(out_file: Path, disc: tuple[int, int, int] = (4, 4, 4)):
+def cube_gen(out_file: Path | None = None, disc: tuple[int, int, int] = (4, 4, 4)):
     import gmsh
 
     gmsh.initialize()
@@ -66,7 +66,7 @@ def cube_gen_2layers(out_file: Path, disc: tuple[int, int, int] = (4, 4, 4)):
     gmsh.finalize()
 
 
-def randomize_nodes(mesh_in: Path, mesh_out: Path, delta: float = 0.1):
+def randomize_nodes(mesh_in: Path, mesh_out: Path | None, delta: float = 0.1):
     mesh = meshio.read(mesh_in)
     points, cells = extract_points_and_cells(mesh, dtype=jnp.float32)
     dof = prepare_dof_masks_and_bases(points, cells)
@@ -93,9 +93,11 @@ def randomize_nodes(mesh_in: Path, mesh_out: Path, delta: float = 0.1):
     moved_points = apply_nodal_displacements(points, all_disps)
 
     new_mesh = meshio.Mesh(points=np.array(moved_points), cells=[("hexahedron", np.array(cells))])
-    if mesh_out.exists():
-        mesh_out.unlink()
-    new_mesh.write(str(mesh_out), file_format="gmsh")
+    if mesh_out is not None:
+        if mesh_out.exists():
+            mesh_out.unlink()
+        new_mesh.write(str(mesh_out), file_format="gmsh")
+    return new_mesh
 
 
 if __name__ == "__main__":
